@@ -27,6 +27,8 @@ _logger = logging.getLogger(__name__)
 _DATE_COMPONENT_RE = re.compile(r"%[YymbBdej]")
 _TZ_COMPONENT_RE = re.compile(r"%:?[zZ]")
 _UNIT_CAPTURE = r"([A-Za-z0-9./]+)"
+_DST_AMBIGUOUS_STRATEGY = "earliest"
+_DST_NON_EXISTENT_STRATEGY = "null"
 
 
 def _split_tz_fmts(fmts: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -192,6 +194,11 @@ class ResolvedColumn(BaseModel):
             mr_name: Machine-readable column name (e.g. 'voltage_volt').
             tz: IANA timezone applied to naive (no embedded offset) datetime formats when
                 ``mr_name == "unix_time_second"``; ignored otherwise. Defaults to ``"UTC"``.
+                Around daylight-saving clock changes, some local times do not map to one
+                exact instant. If clocks move back from UTC+1 to UTC+0, ``01:30`` can mean
+                either ``00:30 UTC`` or ``01:30 UTC``; this parser uses ``00:30 UTC`` for
+                the resulting ``Unix Time / s`` value. If clocks move forward and skip
+                ``01:30``, that row becomes null.
 
         Returns:
             Polars expression that applies scale, offset, and dtype conversion.
@@ -235,6 +242,10 @@ def _datetime_unix_expr(src: str, fmts: list[str], tz: str = "UTC") -> pl.Expr:
         src: Source column name.
         fmts: Datetime format strings to try, in order.
         tz: IANA timezone applied to naive (no embedded offset) candidates. Defaults to ``"UTC"``.
+            Around daylight-saving clock changes, repeated local times are converted to
+            the earlier possible ``Unix Time / s`` value. For example, if clocks move back
+            from UTC+1 to UTC+0, ``01:30`` is treated as ``00:30 UTC`` rather than
+            ``01:30 UTC``. Local times skipped when clocks move forward become null.
 
     Returns:
         Polars expression that parses datetime strings and converts to unix timestamp seconds.
@@ -243,7 +254,11 @@ def _datetime_unix_expr(src: str, fmts: list[str], tz: str = "UTC") -> pl.Expr:
     # timestamp() per candidate avoids coalesce supertype conflict (tz-aware vs tz-naive)
     candidates = [pl.col(src).str.to_datetime(f, strict=False).dt.timestamp("us") for f in tz_aware_fmts]
     candidates += [
-        pl.col(src).str.to_datetime(f, strict=False).dt.replace_time_zone(tz).dt.timestamp("us") for f in naive_fmts
+        pl.col(src)
+        .str.to_datetime(f, strict=False)
+        .dt.replace_time_zone(tz, ambiguous=_DST_AMBIGUOUS_STRATEGY, non_existent=_DST_NON_EXISTENT_STRATEGY)
+        .dt.timestamp("us")
+        for f in naive_fmts
     ]
     parsed = pl.coalesce(candidates) if len(candidates) > 1 else candidates[0]
     return parsed.cast(pl.Float64) / 1e6
@@ -276,7 +291,11 @@ def _validate_tz(tz: str) -> None:
         ValueError: If ``tz`` is not a recognized IANA timezone name.
     """
     try:
-        pl.Series(["2024-01-01 00:00:00"]).str.to_datetime().dt.replace_time_zone(tz)
+        pl.Series(["2024-01-01 00:00:00"]).str.to_datetime().dt.replace_time_zone(
+            tz,
+            ambiguous=_DST_AMBIGUOUS_STRATEGY,
+            non_existent=_DST_NON_EXISTENT_STRATEGY,
+        )
     except pl.exceptions.ComputeError as e:
         if "time zone" not in str(e).lower():
             raise
@@ -513,7 +532,11 @@ class TableNormalizer(BaseModel):
                 raises on missing required columns instead of warning).
             tz: IANA timezone applied to naive (no embedded offset) ``unix_time_second``
                 datetime formats. Defaults to ``"UTC"``; emits a ``UserWarning`` when a
-                naive format is in play and ``tz`` is left at its default.
+                naive format is in play and ``tz`` is left at its default. Around
+                daylight-saving clock changes, repeated local times are converted to the
+                earlier possible ``Unix Time / s`` value. For example, if clocks move back
+                from UTC+1 to UTC+0, ``01:30`` is treated as ``00:30 UTC`` rather than
+                ``01:30 UTC``. Local times skipped when clocks move forward become null.
 
         Returns:
             Normalized dataframe in the same format as input.
@@ -1091,7 +1114,11 @@ def normalize(
             raises on missing required columns instead of warning).
         tz: IANA timezone applied to naive ``unix_time_second`` datetime formats. Defaults
             to ``"UTC"``; emits a ``UserWarning`` when a naive format is in play and ``tz``
-            is left at its default.
+            is left at its default. Around daylight-saving clock changes, repeated local
+            times are converted to the earlier possible ``Unix Time / s`` value. For
+            example, if clocks move back from UTC+1 to UTC+0, ``01:30`` is treated as
+            ``00:30 UTC`` rather than ``01:30 UTC``. Local times skipped when clocks move
+            forward become null.
 
     Returns:
         Normalized dataframe in the same format as input.

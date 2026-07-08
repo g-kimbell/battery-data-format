@@ -956,6 +956,27 @@ class TestTimezoneHandling:
         with pytest.raises(ValueError, match="invalid tz 'Not/AZone'.*time zone"):
             n.normalize(lf, validate=False, tz="Not/AZone")
 
+    def test_dst_non_existent_time_becomes_null(self):
+        """Spring-forward gap timestamps become null instead of failing the read."""
+        n = TableNormalizer(unix_time_second=(DateTimeSyn(syn=Syn(hdr="ts"), fmts=("%Y-%m-%d %H:%M:%S",)),))
+        df = pl.DataFrame({"ts": ["2024-03-10 02:30:00"]})
+        out = n.normalize(df, validate=False, tz="America/New_York")
+        assert out["Unix Time / s"].to_list() == [None]
+
+    def test_dst_ambiguous_time_uses_earliest_occurrence(self):
+        """Fall-back repeated hour timestamps choose the earliest occurrence."""
+        n = TableNormalizer(unix_time_second=(DateTimeSyn(syn=Syn(hdr="ts"), fmts=("%Y-%m-%d %H:%M:%S",)),))
+        df = pl.DataFrame({"ts": ["2024-11-03 01:30:00"]})
+        out = n.normalize(df, validate=False, tz="America/New_York")
+        assert out["Unix Time / s"][0] == pytest.approx(1730611800.0)
+
+    def test_dst_transition_times_do_not_fail_lazy_collect(self):
+        """DST edge cases are handled inside the lazy plan before collect()."""
+        n = TableNormalizer(unix_time_second=(DateTimeSyn(syn=Syn(hdr="ts"), fmts=("%Y-%m-%d %H:%M:%S",)),))
+        lf = pl.LazyFrame({"ts": ["2024-03-10 02:30:00", "2024-11-03 01:30:00"]})
+        out = n.normalize(lf, validate=False, tz="America/New_York").collect()
+        assert out["Unix Time / s"].to_list() == [None, 1730611800.0]
+
     def test_elapsed_seconds_identical_regardless_of_tz(self):
         """test_time_second/step_time_second values are unaffected by tz (offset cancels out)."""
         n = TableNormalizer(
