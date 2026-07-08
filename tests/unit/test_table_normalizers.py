@@ -967,6 +967,18 @@ class TestPybammNormalizer:
             }
         )
 
+    @pytest.fixture
+    def mock_df_kelvin(self):
+        return pl.DataFrame(
+            {
+                "Time [s]": [0.0, 1.0, 2.0],
+                "Current [A]": [1.0, 1.0, -0.5],
+                "Voltage [V]": [4.10, 3.90, 4.00],
+                "Discharge capacity [A.h]": [0.0, 0.10, 0.05],
+                "X-averaged cell temperature [K]": [298.15, 298.55, 299.05],
+            }
+        )
+
     def test_normalizes_expected_columns(self, mock_df):
         out = NORMALIZERS["pybamm"].normalize(mock_df, validate=False)
         for mr in (
@@ -986,6 +998,11 @@ class TestPybammNormalizer:
         assert out["Test Time / s"].to_list() == mock_df["Time [s]"].to_list()
         assert out["Voltage / V"].to_list() == mock_df["Voltage [V]"].to_list()
         assert out["Temperature T1 / degC"].to_list() == mock_df["X-averaged cell temperature [C]"].to_list()
+
+    def test_kelvin_temperature_converts_to_celsius(self, mock_df_kelvin):
+        """Kelvin exports normalize to the BDF Celsius column."""
+        out = NORMALIZERS["pybamm"].normalize(mock_df_kelvin, validate=False)
+        assert out["Temperature T1 / degC"].to_list() == pytest.approx([25.0, 25.4, 25.9])
 
     def test_current_sign_flipped_to_charge_positive(self, mock_df):
         """PyBaMM is discharge-positive; BDF is charge-positive, so current is negated."""

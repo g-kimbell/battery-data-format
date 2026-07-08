@@ -950,7 +950,7 @@ PYBAMM = TableNormalizer(
     voltage_volt=ResolvedColumn(source_header="Voltage [V]"),
     current_ampere=ResolvedColumn(source_header="Current [A]", scale=-1.0),
     net_capacity_ah=ResolvedColumn(source_header="Discharge capacity [A.h]", scale=-1.0),
-    temperature_t1_celsius=ResolvedColumn(source_header="X-averaged cell temperature [C]"),
+    temperature_t1_celsius=(Syn(hdr="X-averaged cell temperature [{unit}]"),),
     cycle_count=ResolvedColumn(source_header="Cycle"),
     step_id=ResolvedColumn(source_header="Step"),
 )
