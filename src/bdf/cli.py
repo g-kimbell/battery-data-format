@@ -295,7 +295,7 @@ def plot(
     ydata: List[str] = typer.Option(["Voltage / V"], help="One or more BDF columns for y-axis"),
     save: Optional[str] = typer.Option(None, "--save", "-s", help="Save figure to file"),
     show: bool = typer.Option(False, "--show/--no-show", help="Display window"),
-    as_: Optional[str] = typer.Option(None, "--as", help="Force a specific plugin id (e.g., biologic-mpt)"),
+    as_: Optional[str] = typer.Option(None, "--as", help="Force a specific plugin id (e.g., biologic_mpt)"),
     assume_bdf: bool = typer.Option(False, help="Assume input is already BDF (skip detection/normalization)"),
 ):
     """
