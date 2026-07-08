@@ -905,6 +905,31 @@ class TestBDFNormalizer:
             vendor_score = norm.score_columns(bdf_headers)
             assert bdf_score > vendor_score, f"BDF_NORMALIZER should outscore {name}"
 
+    def test_bdf_normalizer_accepts_machine_notation_headers(self):
+        """BDF_NORMALIZER maps current on-disk notation headers to preferred labels."""
+        lf = pl.DataFrame(
+            {
+                "test_time_second": [0.0],
+                "voltage_volt": [3.7],
+                "current_ampere": [0.1],
+            }
+        ).lazy()
+        out = BDF_NORMALIZER.normalize(lf, validate=True).collect()
+        assert out.columns == ["Test Time / s", "Voltage / V", "Current / A"]
+
+    def test_bdf_normalizer_converts_deprecated_machine_notation_headers(self):
+        """BDF_NORMALIZER converts deprecated notation units to preferred labels."""
+        lf = pl.DataFrame(
+            {
+                "test_time_millisecond": [1500.0],
+                "voltage_volt": [3.7],
+                "current_ampere": [0.1],
+            }
+        ).lazy()
+        out = BDF_NORMALIZER.normalize(lf, validate=True).collect()
+        assert out["Test Time / s"][0] == pytest.approx(1.5)
+        assert out.columns == ["Test Time / s", "Voltage / V", "Current / A"]
+
 
 class TestTimezoneHandling:
     """Naive vs tz-aware unix_time_second parsing under the tz parameter."""

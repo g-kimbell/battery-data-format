@@ -173,7 +173,7 @@ def _download_file(url: str, filename_hint: Optional[str] = None) -> Path:
 
 def _plugin_slug_from_isBasedOn(is_based_on: Any) -> Optional[str]:
     """
-    Extract a plugin slug like 'biologic-mpt' from schema:isBasedOn content.
+    Extract a plugin id like 'biologic_mpt' from schema:isBasedOn content.
     Accepts string, object, or list.
     """
     if is_based_on is None:
@@ -197,7 +197,7 @@ def _plugin_slug_from_isBasedOn(is_based_on: Any) -> Optional[str]:
 
     for c in candidates:
         tail = c.rstrip("/").split("/")[-1]
-        slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", tail).strip("-").lower()
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", tail).strip("_").lower()
         if slug:
             return slug
     return None
@@ -222,29 +222,29 @@ def _infer_plugin_from_filename(
         vendor_tail = provider_org_id.rstrip("/").split("/")[-1].lower()
 
     if ext in (".nda", ".ndax"):
-        return "neware-nda"
+        return "neware_nda"
     if ext == ".mpt":
-        return "biologic-mpt"
+        return "biologic_mpt"
     if "biologic" in haystack and ext in (".mpt", ".txt", ".csv"):
-        return "biologic-mpt"
+        return "biologic_mpt"
     if "neware" in haystack and ext == ".csv":
-        return "neware-csv"
+        return "neware_csv"
     if "landt" in haystack:
         if ext == ".csv":
-            return "landt-csv"
+            return "landt_csv"
         if ext == ".txt":
-            return "landt-txt"
+            return "landt_txt"
     if "basytec" in haystack and ext == ".txt":
-        return "basytec-txt"
+        return "basytec_txt"
     if "digatron" in haystack and ext == ".csv":
-        return "digatron-csv"
+        return "digatron_csv"
     if "novonix" in haystack and ext == ".csv":
-        return "novonix-csv"
+        return "novonix_csv"
 
     if ext == ".csv" and vendor_tail:
-        return f"{vendor_tail}-csv"
+        return f"{vendor_tail}_csv"
     if ext == ".txt" and vendor_tail:
-        return f"{vendor_tail}-txt"
+        return f"{vendor_tail}_txt"
     if ext == ".csv":
         return None
     if ext == ".txt":
@@ -319,7 +319,7 @@ def _load_with_bdf(path: Path, plugin_slug: Optional[str]) -> Any:
 
     if hasattr(bdf, "load"):
         try:
-            return bdf.load(path, plugin=plugin_slug)  # type: ignore[attr-defined]
+            return bdf.load(path)  # type: ignore[attr-defined]
         except (ImportError, ModuleNotFoundError) as e:
             pytest.skip(f"Optional dependency missing while loading {path}: {e}")
         except Exception as e:
@@ -327,7 +327,8 @@ def _load_with_bdf(path: Path, plugin_slug: Optional[str]) -> Any:
 
     if hasattr(bdf, "read"):
         try:
-            return bdf.read(path, plugin=plugin_slug)  # type: ignore[attr-defined]
+            df_pl, _meta = bdf.read(path, plugin=plugin_slug, lazy=False)  # type: ignore[attr-defined]
+            return df_pl.to_pandas()
         except (ImportError, ModuleNotFoundError) as e:
             pytest.skip(f"Optional dependency missing while loading {path}: {e}")
         except Exception as e:
