@@ -37,6 +37,8 @@ class Syn(BaseModel):
     """Exemplar header string to match against source column names."""
     assumed: bool = False
     """True when no real-file sample exercises this synonym (see test_synonym_coverage)."""
+    source_unit: str | None = None
+    """Fixed source unit for exact, non-templated aliases."""
 
     @model_validator(mode="before")
     @classmethod
@@ -70,7 +72,11 @@ class Syn(BaseModel):
             if m is None:
                 return None
             return get_unit_conversion(m.group(1), bdf_unit)
-        return (1.0, 0.0) if self.hdr.strip() == header.strip() else None
+        if self.hdr.strip() != header.strip():
+            return None
+        if self.source_unit is not None:
+            return get_unit_conversion(self.source_unit, bdf_unit)
+        return (1.0, 0.0)
 
     def exact_match(self, header: str) -> bool:
         """Test exact case-insensitive match against header.
@@ -966,17 +972,38 @@ NDA_NORMALIZER = TableNormalizer(
 
 
 def _build_bdf_normalizer() -> TableNormalizer:
-    """Build the identity normalizer mapping each non-deprecated BDF label to itself.
+    """Build the normalizer mapping on-disk BDF labels to current labels.
 
     Returns:
-        TableNormalizer whose synonyms are exactly the canonical BDF label templates,
-        used to round-trip already-BDF-formatted tables.
+        TableNormalizer whose synonyms cover canonical BDF label templates plus
+        notation/deprecated aliases, used to round-trip already-BDF-formatted tables.
     """
-    kwargs: dict[str, tuple] = {}
+    kwargs: dict[str, tuple[SynUnion, ...]] = {}
+
+    base_preferred: dict[str, str] = {}
     for mr_name, q in COLUMN_ONTOLOGY:
         if q.deprecated:
             continue
-        kwargs[mr_name] = (Syn(hdr=q.label_template),)
+        base = q.formatted_label.split(" / ", 1)[0].strip().lower()
+        base_preferred.setdefault(base, mr_name)
+
+    def _append(target_mr: str, syn: SynUnion) -> None:
+        existing = kwargs.setdefault(target_mr, ())
+        if syn not in existing:
+            kwargs[target_mr] = (*existing, syn)
+
+    for mr_name, q in COLUMN_ONTOLOGY:
+        target_mr = mr_name
+        if q.deprecated:
+            base = q.formatted_label.split(" / ", 1)[0].strip().lower()
+            target_mr = base_preferred.get(base, mr_name)
+            if target_mr not in TableNormalizer.model_fields:
+                continue
+        elif mr_name not in TableNormalizer.model_fields:
+            continue
+
+        _append(target_mr, Syn(hdr=q.label_template))
+        _append(target_mr, Syn(hdr=q.effective_notation, source_unit=q.unit))
     return TableNormalizer(**kwargs)
 
 
