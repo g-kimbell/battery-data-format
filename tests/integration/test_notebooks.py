@@ -12,7 +12,7 @@ NotebookClient = nbclient.NotebookClient
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXAMPLES_DIR = ROOT / "examples"
+EXAMPLES_DIR = ROOT / "docs" / "examples"
 NOTEBOOKS = sorted(EXAMPLES_DIR.glob("*.ipynb"))
 
 SKIP_NOTEBOOKS = os.getenv("BDF_SKIP_NOTEBOOKS", "").lower() in {"1", "true", "yes"}

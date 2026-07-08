@@ -62,21 +62,22 @@ docs/_autosummary/
 
 # Project-specific data files
 ./*.parquet
-examples/**/*.parquet
+docs/examples/**/*.parquet
 out/
-examples/out/
+docs/examples/out/
 **/.bdf.state.json
-examples/in/raw_data_collection/g20m7/**
-examples/in/raw_data_collection/nacr32140mp10/**
+docs/examples/in/ingest/example_raw_data_collection/g20m7/**
+docs/examples/in/ingest/example_raw_data_collection/nacr32140mp10/**
 **/metadata.jsonld
-# committed registry snapshot used by examples/registry.ipynb (offline / CI)
-!examples/in/registry/**/metadata.jsonld
+# committed registry snapshot used by docs/examples/registry.ipynb (offline / CI)
+!docs/examples/in/registry/**/metadata.jsonld
 
 # Coding agents
 *claude*
 *gemini*
 *agents*
 *codex*
+.agent/
 openspec
 
 # Git/GitHub

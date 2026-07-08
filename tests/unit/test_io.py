@@ -73,6 +73,31 @@ def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
     assert "Current / A" in raw_human.columns
 
 
+@pytest.mark.parametrize("fname", ["roundtrip.bdf.csv", "roundtrip.bdf.parquet"])
+def test_save_default_artifact_read_validate_roundtrip(tmp_path: Path, fname: str) -> None:
+    """save() default notation output is readable by read() with validation enabled.
+
+    Args:
+        tmp_path: Temporary directory for the artifact.
+        fname: Artifact filename under test.
+    """
+    df = pd.DataFrame(
+        {
+            "Test Time / s": [0, 1],
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+        }
+    )
+
+    path = tmp_path / fname
+    io.save(df, path, index=False)
+    loaded, meta = io.read(path, lazy=False)
+
+    assert meta["source"] in {"bdf_csv", "bdf_parquet"}
+    assert isinstance(loaded, pl.DataFrame)
+    assert loaded.columns == ["Test Time / s", "Voltage / V", "Current / A"]
+
+
 # ---------------------------------------------------------------------------
 # read() orchestration (collaborators mocked)
 #
