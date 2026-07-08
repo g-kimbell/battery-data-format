@@ -173,7 +173,7 @@ def _plugin_slug_from_is_based_on(is_based_on: Any) -> Optional[str]:
 
     for candidate in candidates:
         tail = candidate.rstrip("/").split("/")[-1]
-        slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", tail).strip("-").lower()
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", tail).strip("_").lower()
         if slug:
             return slug
     return None
@@ -197,28 +197,28 @@ def _infer_plugin_from_filename(
         vendor_tail = provider_org_id.rstrip("/").split("/")[-1].lower()
 
     if ext in {".nda", ".ndax"}:
-        return "neware-nda"
+        return "neware_nda"
     if ext == ".mpt":
-        return "biologic-mpt"
+        return "biologic_mpt"
     if "biologic" in haystack and ext in {".mpt", ".txt", ".csv"}:
-        return "biologic-mpt"
+        return "biologic_mpt"
     if "neware" in haystack and ext == ".csv":
-        return "neware-csv"
+        return "neware_csv"
     if "landt" in haystack:
         if ext == ".csv":
-            return "landt-csv"
+            return "landt_csv"
         if ext == ".txt":
-            return "landt-txt"
+            return "landt_txt"
     if "basytec" in haystack and ext == ".txt":
-        return "basytec-txt"
+        return "basytec_txt"
     if "digatron" in haystack and ext == ".csv":
-        return "digatron-csv"
+        return "digatron_csv"
     if "novonix" in haystack and ext == ".csv":
-        return "novonix-csv"
+        return "novonix_csv"
     if ext == ".csv" and vendor_tail:
-        return f"{vendor_tail}-csv"
+        return f"{vendor_tail}_csv"
     if ext == ".txt" and vendor_tail:
-        return f"{vendor_tail}-txt"
+        return f"{vendor_tail}_txt"
     return None
 
 
@@ -334,7 +334,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--registry-url", default=DEFAULT_REGISTRY_URL)
     parser.add_argument("--record-api-url", default=DEFAULT_RECORD_API_URL)
     parser.add_argument("--cache-dir", default=str((REPO_ROOT / ".pytest_cache" / "bdf_registry").resolve()))
-    parser.add_argument("--output-dir", default=str((REPO_ROOT / "examples" / "reference").resolve()))
+    parser.add_argument("--output-dir", default=str((REPO_ROOT / "docs" / "examples" / "reference").resolve()))
     parser.add_argument("--max-items", type=int, default=0, help="Maximum number of registry distributions (0=all).")
     parser.add_argument("--max-record-files", type=int, default=0, help="Maximum number of record files (0=all).")
     parser.add_argument("--max-download-mib", type=int, default=200)
@@ -431,9 +431,9 @@ def main() -> int:
                 )
                 continue
 
-            df = bdf.read(local_file, plugin=plugin, validate=False)
+            df, _ = bdf.read(local_file, plugin=plugin, validate=False, lazy=False)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            save_bdf(df, out_path, index=False, human=args.human)
+            save_bdf(df.to_pandas(), out_path, index=False, human=args.human)
             results.append(
                 CaseResult(
                     source=str(case.get("source")),

@@ -16,7 +16,9 @@ from integration.test_cases import ALL_CASES
 #
 # A synonym is "covered" if some real-file ``source_header`` recorded across
 # the test cases sharing that synonym's normalizer matches it. The header
-# pool is built from authored test case strings only
+# pool is built from authored test case strings only. BDF is excluded from
+# this guard because its aliases are ontology-derived round-trip forms rather
+# than vendor sample headers.
 # ---------------------------------------------------------------------------
 
 _KEY_BY_NORMALIZER: dict[TableNormalizer, str] = {norm: key for key, norm in NORMALIZERS.items()}
@@ -26,11 +28,7 @@ def pool(key: str) -> frozenset[str]:
     """Return all recorded source headers for the normalizer registered under ``key``.
 
     For vendor normalizers this is the authored ``ColExpect.source_header`` set.
-    BDF is special: its source headers *are* the canonical spec labels (round-trip
-    identity, proven by ``test_bdf_roundtrip.py``), so the ``bdf`` pool is derived
-    directly from the ontology — every non-deprecated quantity's ``formatted_label`` —
-    rather than from a fixed sample file. This keeps BDF coverage complete and
-    self-maintaining without bloating the file-reading parser cases.
+    BDF is excluded from the per-synonym sample-data guard, so it has no pool.
 
     Args:
         key: A :data:`bdf.table_normalizers.NORMALIZERS` key (e.g. ``"arbin"``).
@@ -38,8 +36,6 @@ def pool(key: str) -> frozenset[str]:
     Returns:
         Frozenset of source headers a real file could carry for that normalizer.
     """
-    if key == "bdf":
-        return frozenset(q.formatted_label for _, q in COLUMN_ONTOLOGY if not q.deprecated)
     headers: set[str] = set()
     for _, case in ALL_CASES:
         if case.expected_columns is None:
@@ -99,14 +95,17 @@ def _build_synonym_coverage_params() -> list:
     """Build parametrized test cases for synonym coverage, marking assumed synonyms as xfail.
 
     Assumed synonyms (Syn.assumed=True) have no sample data in the test corpus and are
-    expected to fail. This marks them explicitly so they don't inflate the test failure count.
-    Covered synonyms (with sample headers in the corpus) must pass.
+    expected to fail. BDF synonyms are omitted because they are ontology-generated
+    aliases validated elsewhere, not vendor sample headers. Covered synonyms (with
+    sample headers in the corpus) must pass.
 
     Returns:
         List of pytest.param objects with xfail marks for assumed synonyms.
     """
     params = []
     for key, mr, syn, exemplar in iter_synonyms():
+        if key == "bdf":
+            continue
         assumed = syn.syn.assumed if isinstance(syn, DateTimeSyn) else syn.assumed
         marks = (
             (pytest.mark.xfail(strict=True, reason="Syn.assumed=True — no sample data exercises this synonym"),)
