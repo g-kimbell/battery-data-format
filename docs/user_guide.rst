@@ -16,6 +16,24 @@ The registered plugin ids are the keys of ``bdf.plugins.PLUGINS`` (use
 catalog of every plugin, the file types it handles, its metadata parser, and
 its column synonyms.
 
+Timezone handling
+------------------
+
+Vendor formats without an embedded UTC offset (Arbin, Maccor, Neware, Novonix,
+LANDT) have their datetime columns parsed and converted to ``Unix Time / s``
+assuming UTC by default. Pass ``tz`` (an IANA zone name, e.g.
+``"Europe/London"``) to ``bdf.read`` or ``bdf.normalize`` if the data was
+recorded in a different timezone:
+
+.. code-block:: python
+
+   df, meta = bdf.read("raw_vendor.csv", tz="Europe/London")
+
+Leaving ``tz`` at its default (``"UTC"``) emits a ``UserWarning`` when a naive
+format is in play, so the assumption is never silent. Formats that already
+embed an offset (e.g. Digatron's ``%:z``-suffixed timestamps) ignore ``tz``
+entirely — the embedded offset is authoritative.
+
 Workflows
 ---------
 
