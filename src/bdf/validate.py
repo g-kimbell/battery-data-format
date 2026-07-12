@@ -106,12 +106,8 @@ def _check_derived(df: pd.DataFrame) -> Dict[str, Any]:
         n_bad = int(mismatch.sum())
         if n_bad:
             worst = float(np.abs(got[mismatch] - exp[mismatch]).max())
-            issues.append(
-                f"'{target}' != {a} {op} {b} in {n_bad}/{len(df)} rows (worst |Δ| = {worst:.4g})."
-            )
-            details.append(
-                {"check": "identity", "column": target, "violations": n_bad, "worst_abs_diff": worst}
-            )
+            issues.append(f"'{target}' != {a} {op} {b} in {n_bad}/{len(df)} rows (worst |Δ| = {worst:.4g}).")
+            details.append({"check": "identity", "column": target, "violations": n_bad, "worst_abs_diff": worst})
 
     # 2) monotonic non-decreasing quantities
     for name in _MONOTONIC_NONDECREASING:
@@ -161,9 +157,7 @@ def _check_derived(df: pd.DataFrame) -> Dict[str, Any]:
                 d = np.diff(v)
                 bad = int(np.nansum((d != 1.0) & (v[1:] != 1.0)))
                 if bad:
-                    issues.append(
-                        f"'step_index' has {bad} transitions that neither increment by 1 nor reset to 1."
-                    )
+                    issues.append(f"'step_index' has {bad} transitions that neither increment by 1 nor reset to 1.")
                     details.append({"check": "step_index_seq", "column": "step_index", "violations": bad})
 
     return {"issues": issues, "details": details}

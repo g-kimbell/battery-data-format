@@ -103,7 +103,4 @@ def test_cycle_count_non_monotonic_flagged():
     df = _consistent_derived_df()
     df["cycle_count"] = [0, 1, 0, 1]
     rep = validate_df(df, report=False, raise_on_error=False)
-    assert any(
-        d["check"] == "monotonic" and d["column"] == "cycle_count"
-        for d in rep["derived"]["details"]
-    )
+    assert any(d["check"] == "monotonic" and d["column"] == "cycle_count" for d in rep["derived"]["details"])
