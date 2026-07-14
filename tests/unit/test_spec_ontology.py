@@ -737,11 +737,30 @@ def test_get_snapshot_writes_to_dest(tmp_path: Path) -> None:
     assert dest.stat().st_size > 0
 
 
+def _bundled_snapshot_version() -> str:
+    """Parse owl:versionInfo out of the bundled snapshot TTL."""
+    import re
+    from importlib.resources import files
+
+    ttl = (files("bdf.data") / "bdf-ontology-snapshot.ttl").read_text(encoding="utf-8")
+    m = re.search(r'owl:versionInfo\s+"([0-9.]+)"', ttl)
+    assert m, "bundled snapshot carries no owl:versionInfo"
+    return m.group(1)
+
+
 @pytest.mark.network
 @pytest.mark.live_network
-def test_bundled_snapshot_is_up_to_date(tmp_path: Path) -> None:
-    """Bundled snapshot matches live ontology. Run `bdf-update-snapshot` if this fails."""
-    fresh_path = ColumnOntology.get_snapshot(dest=tmp_path / "fresh.ttl")
+def test_bundled_snapshot_matches_its_declared_release(tmp_path: Path) -> None:
+    """Bundled snapshot is byte-equivalent (per-quantity) to the ontology release it declares.
+
+    Deliberately pinned to the snapshot's own version rather than the live (latest
+    deployed) ontology: ontology main legitimately runs ahead of the latest release
+    during release-prep windows (version bumps are deferred to the release PR there),
+    so bundled-vs-live is not a stable invariant. Run `bdf-update-snapshot` after a
+    new ontology release to advance the snapshot.
+    """
+    version = _bundled_snapshot_version()
+    fresh_path = ColumnOntology.get_snapshot(dest=tmp_path / "fresh.ttl", version=version)
 
     fresh = ColumnOntology({})
     fresh.load_ttl(fresh_path)
@@ -751,7 +770,34 @@ def test_bundled_snapshot_is_up_to_date(tmp_path: Path) -> None:
     fresh_quantities = {name: (q.unit, q.label_template) for name, q in fresh}
     bundled_quantities = {name: (q.unit, q.label_template) for name, q in bundled}
 
-    assert fresh_quantities == bundled_quantities, "Bundled snapshot is stale. Run `bdf-update-snapshot` to regenerate."
+    assert fresh_quantities == bundled_quantities, (
+        f"Bundled snapshot does not match ontology release {version}. Run `bdf-update-snapshot` to regenerate."
+    )
+
+
+@pytest.mark.network
+@pytest.mark.live_network
+def test_live_ontology_is_superset_of_bundled(tmp_path: Path) -> None:
+    """Live ontology main never loses or alters a quantity the bundled release has.
+
+    The live graph may carry ADDITIONAL terms (unreleased release-prep work upstream);
+    that is expected and tolerated. What must never happen is an existing quantity
+    disappearing or changing unit/label upstream without a coordinated release.
+    """
+    fresh_path = ColumnOntology.get_snapshot(dest=tmp_path / "fresh.ttl")
+
+    fresh = ColumnOntology({})
+    fresh.load_ttl(fresh_path)
+
+    bundled = ColumnOntology.build()
+
+    fresh_quantities = {name: (q.unit, q.label_template) for name, q in fresh}
+    for name, q in bundled:
+        assert name in fresh_quantities, f"quantity {name!r} vanished from the live ontology"
+        assert fresh_quantities[name] == (q.unit, q.label_template), (
+            f"quantity {name!r} changed upstream without a release: "
+            f"live {fresh_quantities[name]} != bundled {(q.unit, q.label_template)}"
+        )
 
 
 # ---------------------------------------------------------------------------
