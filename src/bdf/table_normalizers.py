@@ -758,6 +758,7 @@ BASYTEC = TableNormalizer(
 )
 
 BIOLOGIC = TableNormalizer(
+    unix_time_second=(Syn(hdr="uts/s"),),
     test_time_second=(
         Syn(hdr="time/{unit}"),
         Syn(hdr="time / {unit}", assumed=True),
@@ -767,7 +768,7 @@ BIOLOGIC = TableNormalizer(
     ),
     voltage_volt=(
         Syn(hdr="Ecell/{unit}"),
-        Syn(hdr="Ewe/{unit}", assumed=True),
+        Syn(hdr="Ewe/{unit}"),
         Syn(hdr="u/{unit}", assumed=True),
         Syn(hdr="u[{unit}]", assumed=True),
         Syn(hdr="Ewe ({unit})", assumed=True),
@@ -806,8 +807,16 @@ BIOLOGIC = TableNormalizer(
     discharging_energy_wh=(Syn(hdr="Energy discharge/{unit}"),),
     cumulative_energy_wh=(Syn(hdr="|Energy|/{unit}", assumed=True),),
     net_energy_wh=(Syn(hdr="Energy/{unit}"),),
-    power_watt=(Syn(hdr="P/{unit}"),),
+    power_watt=(
+        Syn(hdr="P/{unit}"),
+        Syn(hdr="Pwe/{unit}"),
+    ),
     internal_resistance_ohm=(Syn(hdr="R/{unit}"),),
+    frequency_hertz=(Syn(hdr="freq/{unit}"),),
+    real_impedance_ohm=(Syn(hdr="Re(Z)/{unit}"),),
+    imaginary_impedance_ohm=(Syn(hdr="-Im(Z)/{unit}", reverse_sign=True),),
+    phase_degree=(Syn(hdr="Phase(Z)/{unit}"),),
+    absolute_impedance_ohm=(Syn(hdr="|Z|/{unit}"),),
 )
 
 DIGATRON = TableNormalizer(
