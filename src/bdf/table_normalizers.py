@@ -26,7 +26,7 @@ _logger = logging.getLogger(__name__)
 
 _DATE_COMPONENT_RE = re.compile(r"%[YymbBdej]")
 _TZ_COMPONENT_RE = re.compile(r"%:?[zZ]")
-_UNIT_CAPTURE = r"([A-Za-z0-9./]+)"
+_UNIT_CAPTURE = r"([A-Za-z0-9.·/*^%°℃ΩΩµμ⁰¹²³⁴⁵⁶⁷⁸⁹⁻ \-]+)"  # omega/ohm and mu/micro are different characters
 _DST_AMBIGUOUS_STRATEGY = "earliest"
 _DST_NON_EXISTENT_STRATEGY = "null"
 
@@ -685,7 +685,7 @@ BASYTEC = TableNormalizer(
         Syn(hdr="Current", assumed=True),
     ),
     temperature_t1_celsius=(
-        Syn(hdr="T1[{unit}]", assumed=True),
+        Syn(hdr="T1[{unit}]"),
         Syn(hdr="T1[°C]"),
         Syn(hdr="Temp[{unit}]", assumed=True),
         Syn(hdr="Temp[°C]", assumed=True),

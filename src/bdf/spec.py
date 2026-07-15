@@ -55,6 +55,7 @@ _UNIT_ALIAS = {
     "A.h": "Ah",
     "W.h": "Wh",
     "Ohm": "ohm",
+    "Ω": "ohm",  # 'ohm' character, 'Omega' character already understood by pint
 }
 
 # Bare "C" or "c" is ambiguous (Celsius vs Coulombs). This set lists the BDF
@@ -166,8 +167,8 @@ def get_unit_conversion(src_unit: str | None, dst_unit: str | None) -> tuple[flo
     Returns:
         Tuple of (scale, offset) for conversion, or None if incompatible.
     """
-    src_bare = (src_unit or "").strip()
-    dst_bare = (dst_unit or "").strip()
+    src_bare = _normalize_unit((src_unit or "").strip())
+    dst_bare = _normalize_unit((dst_unit or "").strip())
     src_is_dim = src_bare in ("", "1")
     dst_is_dim = dst_bare in ("1", "")
     if src_is_dim or dst_is_dim:
@@ -186,7 +187,7 @@ def get_unit_conversion(src_unit: str | None, dst_unit: str | None) -> tuple[flo
         scale = round(at_one - at_zero, 15)
         offset = round(at_zero, 15)
         return (scale, offset)
-    except pint.errors.PintError:
+    except (pint.errors.PintError, AssertionError):
         return None
 
 
