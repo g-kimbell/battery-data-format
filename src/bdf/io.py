@@ -7,6 +7,7 @@ import json
 import re
 import warnings
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 import polars as pl
@@ -15,7 +16,7 @@ from bdf import spec
 from bdf.plugins import PLUGINS, Plugin, detect
 
 
-def read(
+def _read(
     path: str | Path,
     *,
     plugin: Plugin | str | None = None,
@@ -28,29 +29,7 @@ def read(
 ) -> tuple[pl.DataFrame | pl.LazyFrame, dict]:
     """Read ``path`` (local file or URL) to BDF-canonical form, returning ``(df, metadata)``.
 
-    An explicit ``plugin`` bypasses auto-detection. When ``normalize=False``, the raw
-    parser frame is returned with source column names unchanged. ``validate`` defaults to
-    True: column names are checked against the BDF ontology after reading; pass
-    ``validate=False`` to skip the check and only warn.
-
-    Args:
-        path: Local file path or http(s) URL to read.
-        plugin: Explicit Plugin instance or registry id to use, bypassing auto-detection
-            when set. Defaults to None (auto-detect via ``bdf.plugins.detect``).
-        normalize: Map vendor columns to BDF canonical names when True (default).
-        validate: Validate column names against the BDF ontology when True (default;
-            raises on missing required columns instead of warning).
-        include_optional: Include optional BDF columns in the normalized output.
-        extra_columns: Additional column rename mappings to apply during normalization.
-        lazy: Return a LazyFrame when True (default); collect to a DataFrame when False.
-        tz: IANA timezone applied to naive ``unix_time_second`` datetime formats. Defaults
-            to ``"UTC"``; a ``UserWarning`` is emitted when a naive format is in play and
-            ``tz`` is left at its default. See ``TableNormalizer.normalize``.
-
-    Returns:
-        Tuple of (df, metadata): the BDF table (LazyFrame or DataFrame per ``lazy``) and
-        a metadata dict with at least a ``"source"`` key naming the resolved plugin id
-        (or ``"custom"`` for a directly-supplied ``Plugin``).
+    Private implementation behind the public `read` and `scan` functions.
 
     Raises:
         ValueError: If ``plugin`` is not None, a str, or a Plugin instance.
@@ -83,6 +62,105 @@ def read(
     }
 
     return bdf_df, metadata
+
+
+def read(
+    path: str | Path,
+    *,
+    plugin: Plugin | str | None = None,
+    normalize: bool = True,
+    validate: bool = True,
+    include_optional: bool = True,
+    extra_columns: dict[str, str] | None = None,
+    tz: str = "UTC",
+) -> tuple[pl.DataFrame, dict]:
+    """Read ``path`` (local file or URL) to BDF-canonical form, returning ``(df, metadata)``.
+
+    Collects to a :class:`polars.DataFrame`; use :func:`scan` for a :class:`polars.LazyFrame`.
+
+    Args:
+        path: Local file path or http(s) URL to read.
+        plugin: Plugin instance or registry id. Auto-detects if not set (default).
+        normalize: Map vendor columns to BDF canonical names (default True); False returns
+            raw source columns unchanged.
+        validate: Check columns against the BDF ontology, error if missing required columns
+            (default True); set to False to only warn.
+        include_optional: Include optional BDF columns in the normalized output (default True).
+        extra_columns: Additional column rename mappings to apply during normalization.
+        tz: IANA timezone used to compute ``Unix Time / s`` if the source has naive datetime.
+            Default is``"UTC"``, and will warn if source contains naive datetimes.
+
+    Returns:
+        Tuple of (df, metadata): the BDF table as a DataFrame, and a metadata dict with at
+        least a ``"source"`` key naming the resolved plugin id (``"custom"`` for a
+        directly-supplied ``Plugin``).
+
+    Raises:
+        ValueError: If ``plugin`` is not None, a str, or a Plugin instance.
+    """
+    bdf_df, metadata = _read(
+        path,
+        plugin=plugin,
+        normalize=normalize,
+        validate=validate,
+        include_optional=include_optional,
+        extra_columns=extra_columns,
+        lazy=False,
+        tz=tz,
+    )
+    return cast(pl.DataFrame, bdf_df), metadata
+
+
+def scan(
+    path: str | Path,
+    *,
+    plugin: Plugin | str | None = None,
+    normalize: bool = True,
+    validate: bool = True,
+    include_optional: bool = True,
+    extra_columns: dict[str, str] | None = None,
+    tz: str = "UTC",
+) -> tuple[pl.LazyFrame, dict]:
+    """Scan ``path`` (local file or URL) to BDF-canonical form, returning ``(df, metadata)``.
+
+    Returns a :class:`polars.LazyFrame`; use :func:`read` for an eager :class:`polars.DataFrame`.
+
+    Laziness depends on the plugin: CSV/Parquet parsers scan lazily with real pushdown; binary
+    formats (.xlsx, .nda, .ndax, .mat, .mpr) read eagerly and just wrap the result in a
+    LazyFrame — harmless, but no performance benefit.
+
+    Args:
+        path: Local file path or http(s) URL to read.
+        plugin: Plugin instance or registry id; auto-detects via ``bdf.plugins.detect`` when
+            None (default).
+        normalize: Map vendor columns to BDF canonical names (default True); False returns
+            raw source columns unchanged.
+        validate: Check columns against the BDF ontology, raising on missing required ones
+            (default True); False only warns.
+        include_optional: Include optional BDF columns in the normalized output.
+        extra_columns: Additional column rename mappings to apply during normalization.
+        tz: IANA timezone used to compute ``Unix Time / s`` if the source has naive datetime.
+            Default is``"UTC"``, and will warn if source contains naive datetimes.
+
+    Returns:
+        Tuple of (df, metadata): the BDF table as a LazyFrame, and a metadata dict with at
+        least a ``"source"`` key naming the resolved plugin id (``"custom"`` for a
+        directly-supplied ``Plugin``).
+
+    Raises:
+        ValueError: If ``plugin`` is not None, a str, or a Plugin instance.
+    """
+    bdf_df, metadata = _read(
+        path,
+        plugin=plugin,
+        normalize=normalize,
+        validate=validate,
+        include_optional=include_optional,
+        extra_columns=extra_columns,
+        lazy=True,
+        tz=tz,
+    )
+    return cast(pl.LazyFrame, bdf_df), metadata
 
 
 _FMT_EXTS = {

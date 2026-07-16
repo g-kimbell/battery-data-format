@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import pandas as pd
 
 # light imports that never cause cycles
-from .io import load, read, save  # spec-driven reader/serializer (the public read())
+from .io import load, read, save, scan  # spec-driven reader/serializer (the public read()/scan())
 from .plugins import detect  # spec-driven detection -> (plugin_id, Plugin)
 from .repair import CleanReport, clean  # public cleaning helpers
 from .table_normalizers import normalize  # spec-driven column normalizer
@@ -21,6 +21,7 @@ from .validate import BDFValidationError, validate_df  # error type + df validat
 __all__ = [
     # core I/O
     "read",
+    "scan",
     "load",
     "save",
     "normalize",
@@ -1888,7 +1889,6 @@ def ingest(
                 plugin=plugin,
                 validate=validate_converted,
                 include_optional=include_optional,
-                lazy=False,
             )
             df = df_pl.to_pandas()
             out_path = _output_path(f)
