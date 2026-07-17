@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 import pandas as pd
 
 # light imports that never cause cycles
-from .io import load, read, save, scan  # spec-driven reader/serializer (the public read()/scan())
+from .io import read, save, scan  # spec-driven reader/serializer (the public read()/scan())
 from .plugins import detect  # spec-driven detection -> (plugin_id, Plugin)
 from .repair import CleanReport, clean  # public cleaning helpers
 from .table_normalizers import normalize  # spec-driven column normalizer
@@ -22,7 +22,6 @@ __all__ = [
     # core I/O
     "read",
     "scan",
-    "load",
     "save",
     "normalize",
     "validate",
