@@ -176,7 +176,6 @@ def clean(
     path: str,
     out: str = typer.Option(..., "--out", "-o", help="Where to write cleaned BDF CSV"),
     as_: Optional[str] = typer.Option(None, "--as", help="Force plugin id for raw input"),
-    assume_bdf: bool = typer.Option(False, help="Treat input as already-normalized BDF"),
     time_fix: str = typer.Option("segment", help="segment|sort|drop|none"),
     outlier: str = typer.Option("none", help="none|drop|clip|interp"),
     z: float = typer.Option(8.0, help="Robust z threshold for outliers"),
