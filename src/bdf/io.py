@@ -262,6 +262,7 @@ def save(
     df: pl.DataFrame | pl.LazyFrame | pd.DataFrame,
     pathlike: str | Path,
     *,
+    human: bool = False,
     metadata: dict | None = None,
     **opts,
 ) -> None:
@@ -292,6 +293,11 @@ def save(
         df = pl.from_pandas(df)
 
     df = BDF_NORMALIZER.normalize(df)
+
+    if human is False:  # Rename cols to machine-readable labels
+        from bdf.spec import COLUMN_ONTOLOGY
+
+        df = COLUMN_ONTOLOGY.rename_label_to_mr(df)
 
     assert isinstance(df, pl.DataFrame)
 

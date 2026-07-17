@@ -709,6 +709,29 @@ class ColumnOntology:
                     first_deprecated = mr_name
         return first_deprecated
 
+    @coerce_dataframe
+    def rename_label_to_mr(self, df: pl.LazyFrame) -> pl.LazyFrame:
+        """Rename BDF columns from preferred-label to machine-readable.
+
+        E.g. ``"Voltage / V"`` -> ``"voltage_volt"``.
+        Columns that don't exactly match are left as-is and warn.
+
+        Args:
+            df: DataFrame (pandas|polars|lazy) with BDF preferred-label columns.
+
+        Returns:
+            DataFrame of the same type, with matched columns renamed to notation.
+        """
+        label_to_notation = {q.formatted_label: q.effective_notation for _, q in self if not q.deprecated}
+        cols = df.collect_schema().names()
+        mapping = {c: label_to_notation[c] for c in cols if c in label_to_notation}
+        unmatched = [c for c in cols if c not in label_to_notation]
+        if unmatched:
+            warnings.warn(
+                f"Columns not recognized as BDF preferred labels, left as-is: {unmatched}", UserWarning, stacklevel=2
+            )
+        return df.rename(mapping) if mapping else df
+
     @classmethod
     def from_graph(cls, g: Any) -> "ColumnOntology":
         """Build ColumnOntology from an rdflib graph.
