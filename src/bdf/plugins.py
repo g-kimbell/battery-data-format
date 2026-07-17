@@ -33,7 +33,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from .file_utils import is_url, read_head, resolve_source
 from .metadata_parsers import JsonSidecarParser, MetadataParser, MetadataSchema, TxtPreambleParser
 from .table_normalizers import BDF_NORMALIZER, NDA_NORMALIZER, NORMALIZERS, TableNormalizer
-from .table_parsers import DelimTxtParser, ExcelParser, MatParser, NDAParser, ParquetParser
+from .table_parsers import (
+    DelimTxtParser,
+    ExcelParser,
+    IPCParser,
+    JsonParser,
+    MatParser,
+    NDAParser,
+    NdjsonParser,
+    ParquetParser,
+)
 
 try:
     import yaml
@@ -45,7 +54,7 @@ except ImportError as _exc:
     _YAML_IMPORT_ERROR = _exc
 
 TableParserUnion = Annotated[
-    DelimTxtParser | ExcelParser | MatParser | ParquetParser | NDAParser,
+    DelimTxtParser | ExcelParser | IPCParser | JsonParser | MatParser | NDAParser | NdjsonParser | ParquetParser,
     Field(discriminator="kind"),
 ]
 MetadataUnion = Annotated[
@@ -205,7 +214,9 @@ BDF_CSV = Plugin(
 )
 
 BDF_PARQUET = Plugin(table_parser=ParquetParser(normalizer=BDF_NORMALIZER))
-
+BDF_JSON = Plugin(table_parser=JsonParser(normalizer=BDF_NORMALIZER))
+BDF_NDJSON = Plugin(table_parser=NdjsonParser(normalizer=BDF_NORMALIZER))
+BDF_IPC = Plugin(table_parser=IPCParser(normalizer=BDF_NORMALIZER))
 
 PLUGINS: dict[str, Plugin] = PluginDict(
     {
@@ -222,6 +233,9 @@ PLUGINS: dict[str, Plugin] = PluginDict(
         "neware_nda": NEWARE_NDA,
         "bdf_csv": BDF_CSV,
         "bdf_parquet": BDF_PARQUET,
+        "bdf_json": BDF_JSON,
+        "bdf_ndjson": BDF_NDJSON,
+        "bdf_ipc": BDF_IPC,
     }
 )
 
