@@ -21,35 +21,35 @@ def test_read_bdf_files(tmp_path: Path) -> None:
     for extra_ext in ("", ".bdf", ".a.b.c", ".a.b.c.bdf"):
         p = tmp_path / f"data{extra_ext}.csv"
         df1.write_csv(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.parquet"
         df1.write_parquet(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.json"
         df1.write_json(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.ndjson"
         df1.write_ndjson(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.ipc"
         df1.write_ipc(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.arrow"
         df1.write_ipc(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)
 
         p = tmp_path / f"data{extra_ext}.feather"
         df1.write_ipc(p)
-        df2, _metadata = bdf.read(p, lazy=False)
+        df2, _metadata = bdf.read(p)
         assert_frame_equal(df1, df2)

@@ -672,7 +672,7 @@ class TestParquetParser:
         p = tmp_path / "data"
         pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_parquet(p)
         lf, _metadata = bdf.read(p, normalize=False)
-        assert isinstance(lf, pl.LazyFrame)
+        assert isinstance(lf, pl.DataFrame)
         assert lf.collect_schema().names() == ["a", "b"]
 
 
@@ -844,7 +844,7 @@ class TestIpcParser:
         p = tmp_path / "data"
         pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_ipc(p)
         lf, _metadata = bdf.read(p, normalize=False)
-        assert isinstance(lf, pl.LazyFrame)
+        assert isinstance(lf, pl.DataFrame)
         assert lf.collect_schema().names() == ["a", "b"]
 
 
