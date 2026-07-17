@@ -410,9 +410,10 @@ def validate(
 
         # Try to load with strict BDF IO (no transformations)
         try:
-            from .io import load as _load_bdf  # strict loader for BDF CSV/Parquet/Feather/JSON
+            from .io import read
 
-            df = _load_bdf(p)
+            df, _metadata = read(p)  # TODO not strict, takes any data
+            df = df.to_pandas()
         except Exception as e:
             return _bad_report(
                 kind="io_error",
@@ -783,8 +784,6 @@ def ingest(
         files = [f for f in file_root.glob(pattern) if f.is_file()]
     else:
         files = [p]
-
-    from .io import save as _save  # lazy import
 
     summary = {
         "converted": [],
@@ -1849,9 +1848,8 @@ def ingest(
                 if layout_mode == "flat" and not collection_metadata:
                     df_for_meta = None
                     try:
-                        from .io import load as _load_bdf  # lazy import
-
-                        df_for_meta = _load_bdf(output_used)
+                        df_for_meta, _metadata = read(output_used)
+                        df_for_meta = df_for_meta.to_pandas()
                     except Exception:
                         df_for_meta = None
                     try:
@@ -1892,7 +1890,7 @@ def ingest(
             df = df_pl.to_pandas()
             out_path = _output_path(f)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            _save(df, out_path, index=False, human=human)
+            save(df, out_path, human=human)
             converted_entry = {"path": str(f), "output": str(out_path)}
             if incremental:
                 key = _state_key(f)

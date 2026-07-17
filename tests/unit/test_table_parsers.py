@@ -626,7 +626,7 @@ class TestReadValidate:
         assert "Test Time / s" in result.columns
 
     def test_tableparser_read_lazy_false_collects_raw_frame(self, tmp_path: Path) -> None:
-        """TableParser.read(normalize=False, lazy=False) collects the raw frame to a DataFrame."""
+        """TableParser.read(normalize=False) collects the raw frame to a DataFrame."""
 
         p = tmp_path / "data.csv"
         rows = "\n".join(f"{i},{3.5 + i / 10},0.1" for i in range(6))

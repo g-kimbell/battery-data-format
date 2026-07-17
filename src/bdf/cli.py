@@ -10,11 +10,10 @@ from . import (
     BDFValidationError,
     detect as detect_source,
     ingest as ingest_bdf,
-    read as read_bdf,
     templates as templates_api,
     validate as validate_any,
 )
-from .io import load as load_bdf, save as save_bdf
+from .io import read, save
 from .metadata import Creator, Dataset, RelatedIdentifier, save_jsonld
 from .repair import clean as clean_bdf
 from .visualize import plot as line_plot
@@ -164,7 +163,7 @@ def meta_jsonld(
     df = None
     if infer_columns:
         try:
-            df = load_bdf(data)
+            df, _metadata = read(data)
         except Exception:
             df = None  # okay: JSON-LD will omit per-column metadata
 
@@ -187,18 +186,14 @@ def clean(
     Clean a dataset by fixing non-monotonic time and removing/repairing outliers.
     Accepts either BDF CSV/Parquet or a raw vendor file.
     """
-    # Load BDF or raw
-    if assume_bdf:
-        df = load_bdf(path)
-    else:
-        try:
-            df = load_bdf(path)
-        except Exception:
-            df_pl, _ = read_bdf(path, plugin=as_, lazy=False)
-            df = df_pl.to_pandas()
+    # Load BDF
+    import polars as pl
 
-    df2, rep = clean_bdf(df, time_fix=time_fix, outlier=outlier, z_thresh=z, columns=col)
-    save_bdf(df2, out, index=False)
+    df_pl, _ = read(path, plugin=as_)
+    df = df_pl.to_pandas()
+    df, rep = clean_bdf(df, time_fix=time_fix, outlier=outlier, z_thresh=z, columns=col)
+    df_pl = pl.from_pandas(df)
+    save(df, out)
     typer.echo(str(rep))
     typer.echo(f"Saved: {out}")
 
@@ -280,11 +275,9 @@ def convert(
     as_: Optional[str] = None,
     human: bool = typer.Option(False, "--human/--machine", help="Serialize headers as prefLabel instead of notation"),
 ):
-    from . import read as read_bdf
-
-    df_pl, _ = read_bdf(path, plugin=as_, lazy=False)
+    df_pl, _ = read(path, plugin=as_)
     df = df_pl.to_pandas()
-    save_bdf(df, to, index=False, human=human)
+    save(df, to, human=human)
     print(f"[bdf] wrote {to}")
 
 
@@ -296,7 +289,6 @@ def plot(
     save: Optional[str] = typer.Option(None, "--save", "-s", help="Save figure to file"),
     show: bool = typer.Option(False, "--show/--no-show", help="Display window"),
     as_: Optional[str] = typer.Option(None, "--as", help="Force a specific plugin id (e.g., biologic_mpt)"),
-    assume_bdf: bool = typer.Option(False, help="Assume input is already BDF (skip detection/normalization)"),
 ):
     """
     Plot a BDF-normalized dataset. If the file isn't already BDF, auto-detect and convert on the fly.
@@ -305,16 +297,8 @@ def plot(
     if not p.exists():
         raise typer.BadParameter(f"File not found: {p}")
 
-    df = None
-    if assume_bdf:
-        df = load_bdf(p)
-    else:
-        # First try BDF; if it errors, fall back to raw->BDF
-        try:
-            df = load_bdf(p)
-        except Exception:
-            df_pl, _ = read_bdf(p, plugin=as_, lazy=False)
-            df = df_pl.to_pandas()
+    df, _metadata = read(p, plugin=as_)
+    df = df.to_pandas()
 
     # Draw the plot
     line_plot(df, xdata=xdata, ydata=ydata, save=save, show=show, title=f"{', '.join(ydata)} vs {xdata}")

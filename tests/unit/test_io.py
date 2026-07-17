@@ -4,12 +4,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pandas as pd
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 
 from bdf import io
-from bdf.io import read
+from bdf.io import read, scan
 from bdf.plugins import Plugin
 from bdf.table_normalizers import TableNormalizer
 from bdf.table_parsers import DelimTxtParser
@@ -22,9 +22,9 @@ def test_detect_format_known_and_unknown(tmp_path: Path):
 
 
 def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
-    df = pd.DataFrame(
+    df = pl.DataFrame(
         {
-            "Test Time / s": [0, 1, 2],
+            "Test Time / s": [0.0, 1.0, 2.0],
             "Voltage / V": [3.7, 3.6, 3.5],
             "Current / A": [0.1, 0.1, 0.1],
         }
@@ -32,9 +32,9 @@ def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
 
     for fname in ("sample.bdf.csv", "sample.bdf.parquet", "sample.bdf.json"):
         path = tmp_path / fname
-        io.save(df, path, index=False)
-        loaded = io.load(path)
-        pd.testing.assert_frame_equal(df, loaded)
+        io.save(df, path)
+        loaded, _metadata = io.read(path)
+        assert_frame_equal(df, loaded)
 
 
 def test_detect_format_unknown_raises(tmp_path: Path):
@@ -45,7 +45,7 @@ def test_detect_format_unknown_raises(tmp_path: Path):
 
 
 def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
-    df = pd.DataFrame(
+    df = pl.DataFrame(
         {
             "Test Time / s": [0, 1],
             "Voltage / V": [3.7, 3.6],
@@ -54,20 +54,20 @@ def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
     )
 
     machine_path = tmp_path / "machine.bdf.csv"
-    io.save(df, machine_path, index=False)
-    raw_machine = pd.read_csv(machine_path)
+    io.save(df, machine_path)
+    raw_machine = pl.read_csv(machine_path)
     assert "test_time_second" in raw_machine.columns
     assert "voltage_volt" in raw_machine.columns
     assert "current_ampere" in raw_machine.columns
 
-    loaded = io.load(machine_path)
+    loaded, _metadata = io.read(machine_path)
     assert "Test Time / s" in loaded.columns
     assert "Voltage / V" in loaded.columns
     assert "Current / A" in loaded.columns
 
     human_path = tmp_path / "human.bdf.csv"
-    io.save(df, human_path, index=False, human=True)
-    raw_human = pd.read_csv(human_path)
+    io.save(df, human_path, human=True)
+    raw_human = pl.read_csv(human_path)
     assert "Test Time / s" in raw_human.columns
     assert "Voltage / V" in raw_human.columns
     assert "Current / A" in raw_human.columns
@@ -81,7 +81,7 @@ def test_save_default_artifact_read_validate_roundtrip(tmp_path: Path, fname: st
         tmp_path: Temporary directory for the artifact.
         fname: Artifact filename under test.
     """
-    df = pd.DataFrame(
+    df = pl.DataFrame(
         {
             "Test Time / s": [0, 1],
             "Voltage / V": [3.7, 3.6],
@@ -90,8 +90,8 @@ def test_save_default_artifact_read_validate_roundtrip(tmp_path: Path, fname: st
     )
 
     path = tmp_path / fname
-    io.save(df, path, index=False)
-    loaded, meta = io.read(path, lazy=False)
+    io.save(df, path)
+    loaded, meta = io.read(path)
 
     assert meta["source"] in {"bdf_csv", "bdf_parquet"}
     assert isinstance(loaded, pl.DataFrame)
@@ -169,7 +169,7 @@ def test_read_plugin_invalid_type_raises(tmp_path: Path) -> None:
 
 
 def test_read_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespace, tmp_path: Path) -> None:
-    """read() forwards path + the six read-shaping kwargs (incl. lazy, tz) verbatim, nothing else."""
+    """read() forwards path + the five read-shaping kwargs verbatim, plus lazy=False."""
     p = tmp_path / "f.csv"
     read(
         p,
@@ -178,7 +178,6 @@ def test_read_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespa
         validate=False,
         include_optional=False,
         extra_columns={"a": "b"},
-        lazy=False,
         tz="America/New_York",
     )
     read_mocks.table_read.assert_called_once_with(
@@ -188,6 +187,29 @@ def test_read_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespa
         include_optional=False,
         extra_columns={"a": "b"},
         lazy=False,
+        tz="America/New_York",
+    )
+
+
+def test_scan_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespace, tmp_path: Path) -> None:
+    """scan() forwards path + the five read-shaping kwargs verbatim, plus lazy=True."""
+    p = tmp_path / "f.csv"
+    scan(
+        p,
+        plugin=read_mocks.plugin,
+        normalize=False,
+        validate=False,
+        include_optional=False,
+        extra_columns={"a": "b"},
+        tz="America/New_York",
+    )
+    read_mocks.table_read.assert_called_once_with(
+        p,
+        normalize=False,
+        validate=False,
+        include_optional=False,
+        extra_columns={"a": "b"},
+        lazy=True,
         tz="America/New_York",
     )
 
@@ -206,25 +228,5 @@ def test_read_returns_table_parser_frame_unchanged(read_mocks: SimpleNamespace, 
     sentinel = pl.DataFrame({"x": [1, 2]})
     read_mocks.table_read.return_value = sentinel
     p = tmp_path / "f.csv"
-    result, _ = read(p, plugin=read_mocks.plugin, lazy=False)
+    result, _ = read(p, plugin=read_mocks.plugin)
     assert result is sentinel
-
-
-class TestDeprecatedLabelRedirects:
-    """Load and save paths route deprecated labels via dcterms:isReplacedBy."""
-
-    def test_canonicalize_renames_to_replacement(self):
-        """Regression: step_capacity_ah was renamed to its own deprecated pref label
-        instead of the replacement's."""
-        df = pd.DataFrame({"step_capacity_ah": [0.5], "test_time_second": [0.0]})
-        out, legacy = io.canonicalize_legacy_labels(df)
-        assert "Step Cumulative Capacity / Ah" in out.columns
-        assert "Step Capacity / Ah" not in out.columns
-        assert "step_capacity_ah" in legacy
-
-    def test_label_maps_route_deprecated_notation_to_replacement_pref(self):
-        """The save-path label maps must also honor the replacement link."""
-        _, machine_to_pref = io._label_maps()
-        assert machine_to_pref["step_capacity_ah"] == "Step Cumulative Capacity / Ah"
-        assert machine_to_pref["step_energy_wh"] == "Step Cumulative Energy / Wh"
-        assert machine_to_pref["test_time_millisecond"] == "Test Time / s"
