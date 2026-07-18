@@ -13,6 +13,7 @@ Polars is licensed under MIT: https://github.com/pola-rs/polars/blob/main/LICENS
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -539,6 +540,15 @@ class ExcelParser(TableParser):
         default=None,
         description=_polars_param_desc(pl.read_excel, "sheet_name"),
     )
+    sheet_pattern: str | None = Field(
+        default=None,
+        description=(
+            "Case-insensitive regex matched against the workbook's sheet names; the first "
+            "matching sheet is read. For vendors whose data-sheet name varies per export "
+            "(e.g. Arbin's Channel_1-002 / Channel-6_1 / Channel_6_1). Mutually exclusive "
+            "with sheet_id/sheet_name."
+        ),
+    )
     has_header: bool = Field(
         default=True,
         description=_polars_param_desc(pl.read_excel, "has_header"),
@@ -576,7 +586,39 @@ class ExcelParser(TableParser):
                 "If your data has no headers, read directly with polars.read_excel(..., has_header=False) "
                 "then normalize with the TableNormalizer.normalize() method."
             )
+        if self.sheet_pattern is not None and (self.sheet_id is not None or self.sheet_name is not None):
+            raise ValueError("sheet_pattern is mutually exclusive with sheet_id/sheet_name")
         return self
+
+    def _resolve_sheet_name(self, path: Path) -> str:
+        """Resolve ``sheet_pattern`` to a concrete sheet name for ``path``.
+
+        Args:
+            path: Local file path whose sheet names are enumerated.
+
+        Returns:
+            The first sheet name matching ``sheet_pattern`` (case-insensitive).
+
+        Raises:
+            ValueError: If no sheet matches the pattern.
+        """
+        import fastexcel
+
+        assert self.sheet_pattern is not None  # guarded by the single caller
+        sheets = fastexcel.read_excel(path).sheet_names
+        pattern = re.compile(self.sheet_pattern, re.IGNORECASE)
+        matches = [name for name in sheets if pattern.search(name)]
+        if not matches:
+            raise ValueError(f"no sheet matching {self.sheet_pattern!r} in {path.name!r}; sheets: {sheets}")
+        if len(matches) > 1:
+            # e.g. a multi-channel Arbin export in one workbook: silently reading the
+            # first channel would drop the others' data. Mirror the multi-sheet error
+            # in _read_sheet and make the caller choose.
+            raise ValueError(
+                f"multiple sheets match {self.sheet_pattern!r} in {path.name!r}: {matches}; "
+                "specify `sheet_name` or `sheet_id` to disambiguate."
+            )
+        return matches[0]
 
     def _read_sheet(self, path: str | Path, *, read_options: dict[str, Any], **extra: Any) -> pl.DataFrame:
         """Run ``pl.read_excel`` with the reader's sheet/column config and assert a single sheet.
@@ -597,6 +639,8 @@ class ExcelParser(TableParser):
             kwargs["sheet_id"] = self.sheet_id
         if self.sheet_name is not None:
             kwargs["sheet_name"] = self.sheet_name
+        if self.sheet_pattern is not None:
+            kwargs["sheet_name"] = self._resolve_sheet_name(Path(path))
         if self.columns is not None:
             kwargs["columns"] = self.columns
         if read_options:
@@ -631,7 +675,7 @@ class ExcelParser(TableParser):
         Returns:
             List of column header names from the specified sheet.
         """
-        return self._read_sheet(Path(path), read_options={**(self.read_options or {}), "n_rows": 0}).columns
+        return self._read_sheet(resolve_source(path), read_options={**(self.read_options or {}), "n_rows": 0}).columns
 
 
 # ---------------------------------------------------------------------------

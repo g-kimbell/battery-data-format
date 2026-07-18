@@ -719,3 +719,65 @@ class TestNDAParser:
         nda_path.write_bytes(b"")
         parser = NDAParser()
         assert parser.read_column_headings(nda_path) == ["a", "b"]
+
+
+class TestExcelSheetPattern:
+    """ExcelParser.sheet_pattern: regex-based sheet selection for variable sheet names."""
+
+    @staticmethod
+    def _arbin_workbook(tmp_path):
+        openpyxl = pytest.importorskip("openpyxl")
+        wb = openpyxl.Workbook()
+        gi = wb.active
+        gi.title = "Global_Info"
+        gi.append(["Schedule", "HPPC_test.sdx"])
+        ch = wb.create_sheet("Channel_1-002")
+        ch.append(["Data_Point", "Test_Time(s)", "Voltage(V)", "Current(A)"])
+        ch.append([1, 0.0, 3.6, 0.5])
+        wb.create_sheet("ACIM_chan_1").append(["Frequency", "Zreal", "Zimg"])
+        path = tmp_path / "arbin.xlsx"
+        wb.save(path)
+        return path
+
+    def test_pattern_selects_matching_sheet(self, tmp_path):
+        pytest.importorskip("fastexcel")
+        path = self._arbin_workbook(tmp_path)
+        parser = ExcelParser(sheet_pattern=r"^Channel[_-]")
+        assert parser.read_column_headings(path) == ["Data_Point", "Test_Time(s)", "Voltage(V)", "Current(A)"]
+
+    def test_pattern_skips_non_matching_sheets(self, tmp_path):
+        """Global_Info and ACIM_chan_* must not match the channel pattern."""
+        pytest.importorskip("fastexcel")
+        path = self._arbin_workbook(tmp_path)
+        parser = ExcelParser(sheet_pattern=r"^Channel[_-]")
+        assert "Frequency" not in parser.read_column_headings(path)
+
+    def test_no_matching_sheet_raises_with_sheet_list(self, tmp_path):
+        pytest.importorskip("fastexcel")
+        path = self._arbin_workbook(tmp_path)
+        parser = ExcelParser(sheet_pattern=r"^record$")
+        with pytest.raises(ValueError, match="no sheet matching"):
+            parser.read_column_headings(path)
+
+    def test_pattern_mutually_exclusive_with_sheet_name(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            ExcelParser(sheet_pattern=r"^Channel", sheet_name="record")
+
+    def test_pattern_mutually_exclusive_with_sheet_id(self):
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            ExcelParser(sheet_pattern=r"^Channel", sheet_id=1)
+
+    def test_multiple_matching_sheets_raise(self, tmp_path):
+        """A multi-channel workbook must not silently read only the first channel."""
+        openpyxl = pytest.importorskip("openpyxl")
+        pytest.importorskip("fastexcel")
+        wb = openpyxl.Workbook()
+        wb.active.title = "Global_Info"
+        for ch in ("Channel_1-001", "Channel_1-002"):
+            ws = wb.create_sheet(ch)
+            ws.append(["Test_Time(s)", "Voltage(V)"])
+        path = tmp_path / "two_channels.xlsx"
+        wb.save(path)
+        parser = ExcelParser(sheet_pattern=r"^Channel[_-]")
+        with pytest.raises(ValueError, match="multiple sheets match"):
+            parser.read_column_headings(path)
