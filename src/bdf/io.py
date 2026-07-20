@@ -8,6 +8,7 @@ from typing import Any, cast
 import pandas as pd
 import polars as pl
 
+from bdf.file_utils import open_compressed, strip_compression_suffix
 from bdf.plugins import PLUGINS, Plugin, detect
 from bdf.spec import COLUMN_ONTOLOGY
 from bdf.table_normalizers import BDF_NORMALIZER
@@ -168,12 +169,6 @@ _FMT_EXTS = {
     "ndjson": {".ndjson", ".bdf.ndjson"},
     "xlsx": {".xlsx", ".bdf.xlsx"},
 }
-_COMPRESS = {
-    ".gz": "gzip",
-    ".bz2": "bz2",
-    ".xz": "xz",
-    ".zst": "zstd",
-}
 
 
 def _detect_format(path: Path) -> str:
@@ -188,63 +183,11 @@ def _detect_format(path: Path) -> str:
     Raises:
         ValueError: If no known format extension is found in ``path``.
     """
-    sfx = "".join(path.suffixes).lower()
-    for comp_ext in _COMPRESS:
-        if sfx.endswith(comp_ext):
-            sfx = sfx[: -len(comp_ext)]
-            break
+    sfx = "".join(Path(strip_compression_suffix(path.name)).suffixes).lower()
     for fmt, exts in _FMT_EXTS.items():
         if any(sfx.endswith(e) for e in exts):
             return fmt
     raise ValueError(f"Unknown BDF artifact format: {path.name}")
-
-
-def _detect_compression(path: Path) -> str | None:
-    """Return the compression codec implied by ``path``'s trailing extension.
-
-    Args:
-        path: File path whose string form is checked against :data:`_COMPRESS` suffixes.
-
-    Returns:
-        Compression codec name (e.g. "gzip"), or None if no known compression suffix matches.
-    """
-    s = str(path).lower()
-    for ext, comp in _COMPRESS.items():
-        if s.endswith(ext):
-            return comp
-    return None
-
-
-def _open_compressed(path: Path, comp: str) -> Any:
-    """Open ``path`` for binary writing through the ``comp`` compression codec.
-
-    Args:
-        path: Output file path.
-        comp: Compression codec name, one of :data:`_COMPRESS`'s values.
-
-    Returns:
-        A writable binary file object; the caller is responsible for closing it.
-
-    Raises:
-        ValueError: If ``comp`` is not a supported codec.
-    """
-    if comp == "gzip":
-        import gzip
-
-        return gzip.open(path, "wb")
-    if comp == "bz2":
-        import bz2
-
-        return bz2.open(path, "wb")
-    if comp == "xz":
-        import lzma
-
-        return lzma.open(path, "wb")
-    if comp == "zstd":  # zstd only added to stdlib in 3.14, pyarrow is already a dependency, can use that
-        import pyarrow as pa
-
-        return pa.output_stream(str(path), compression="zstd")
-    raise ValueError(f"Unsupported compression: {comp}")
 
 
 def _meta_sidecar(path: Path) -> Path:
@@ -288,7 +231,6 @@ def save(
     p = Path(pathlike)
     p.parent.mkdir(parents=True, exist_ok=True)
     fmt = _detect_format(p)
-    comp = _detect_compression(p)
 
     if isinstance(df, pl.LazyFrame):
         df = df.collect()
@@ -304,10 +246,7 @@ def save(
 
     assert isinstance(df, pl.DataFrame)
 
-    if comp is not None and fmt == "xlsx":
-        raise ValueError("Compression is not supported for xlsx output")
-
-    target: Any = _open_compressed(p, comp) if comp is not None else p
+    target: Any = open_compressed(p)
     try:
         if fmt == "csv":
             df.write_csv(target, **opts)
@@ -320,11 +259,14 @@ def save(
         elif fmt == "ndjson":
             df.write_ndjson(target, **opts)
         elif fmt == "xlsx":
+            if not isinstance(target, Path):
+                msg = "Compression is not supported for xlsx output"
+                raise ValueError(msg)
             df.write_excel(target, **opts)
         else:
             raise ValueError(f"Unsupported format: {fmt}")
     finally:
-        if target is not p:
+        if not isinstance(target, Path):
             target.close()
 
     if metadata:

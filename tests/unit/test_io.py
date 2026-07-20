@@ -25,8 +25,13 @@ def test_detect_format_known_and_unknown(tmp_path: Path):
     assert io._detect_format(tmp_path / "file.bdf.arrow") == "ipc"
     assert io._detect_format(tmp_path / "file.bdf.ipc") == "ipc"
 
+    assert io._detect_format(tmp_path / "file.bdf.csv.gz") == "csv"
+    assert io._detect_format(tmp_path / "file.bdf.csv.bz2") == "csv"
+    assert io._detect_format(tmp_path / "file.bdf.csv.xz") == "csv"
+    assert io._detect_format(tmp_path / "file.bdf.csv.zst") == "csv"
 
-def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
+
+def test_save_and_load_roundtrips(tmp_path: Path):
     df = pl.DataFrame(
         {
             "Test Time / s": [0.0, 1.0, 2.0],
@@ -35,19 +40,34 @@ def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
         }
     )
 
-    for fname in (
-        "sample.bdf.csv",
-        "sample.bdf.parquet",
-        "sample.bdf.json",
-        "sample.bdf.ndjson",
-        "sample.bdf.feather",
-        "sample.bdf.arrow",
-        "sample.bdf.ipc",
-    ):
-        path = tmp_path / fname
+    exts = [".csv", ".parquet", ".json", ".ndjson", ".feather", ".arrow", ".ipc"]
+    comps = ["", ".gz", ".bz2", ".xz", ".zst"]
+
+    for ext in exts:
+        for comp in comps:
+            path = tmp_path / ("data.bdf" + ext + comp)
+            io.save(df, path)
+            loaded, _metadata = io.read(path)
+            assert_frame_equal(df, loaded)
+
+
+def test_compression_compresses(tmp_path: Path):
+    df = pl.DataFrame(
+        {  # Need more datapoints for compression to be able to do anything
+            "Test Time / s": pl.linear_space(0, 1000, 1000, eager=True),
+            "Voltage / V": pl.linear_space(3.5, 4.2, 1000, eager=True),
+            "Current / A": pl.linear_space(1.0, 1.0, 1000, eager=True),
+        }
+    )
+    path = tmp_path / "data.bdf.csv"
+    io.save(df, path)
+    uncompressed_size = path.stat().st_size
+
+    comps = [".gz", ".bz2", ".xz", ".zst"]
+    for comp in comps:
+        path = tmp_path / ("data.bdf.csv" + comp)
         io.save(df, path)
-        loaded, _metadata = io.read(path)
-        assert_frame_equal(df, loaded)
+        assert path.stat().st_size < uncompressed_size
 
 
 def test_detect_format_unknown_raises(tmp_path: Path):

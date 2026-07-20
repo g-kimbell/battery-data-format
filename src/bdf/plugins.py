@@ -30,7 +30,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .file_utils import is_url, read_head, resolve_source
+from .file_utils import is_url, read_head, resolve_source, strip_compression_suffix
 from .metadata_parsers import JsonSidecarParser, MetadataParser, MetadataSchema, TxtPreambleParser
 from .table_normalizers import BDF_NORMALIZER, NDA_NORMALIZER, NORMALIZERS, TableNormalizer
 from .table_parsers import (
@@ -269,7 +269,7 @@ def _ext_from_url(url: str) -> str:
 
     segments = [s for s in urlparse(url).path.split("/") if s]
     for segment in reversed(segments):
-        suffix = Path(segment).suffix
+        suffix = Path(strip_compression_suffix(segment)).suffix
         if suffix:
             return suffix.lower()
     return ""
@@ -337,7 +337,7 @@ def detect_from_ext_or_magic_bytes(
     if is_url(path_str):
         exts = [_ext_from_url(path_str)]
     else:
-        suffixes = Path(path).suffixes
+        suffixes = Path(strip_compression_suffix(Path(path).name)).suffixes
         exts = ["".join(suffixes), "".join(suffixes[-2:]), "".join(suffixes[-1:])]
         exts = [e.lower() for e in exts]
     for ext in dict.fromkeys(e for e in exts if e):  # de-dupe, preserve order
