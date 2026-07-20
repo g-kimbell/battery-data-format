@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
-from bdf import io
+from bdf import BDFValidationError, io
 from bdf.io import read, scan
 from bdf.plugins import Plugin
 from bdf.table_normalizers import TableNormalizer
@@ -18,7 +18,12 @@ from bdf.table_parsers import DelimTxtParser
 def test_detect_format_known_and_unknown(tmp_path: Path):
     assert io._detect_format(tmp_path / "file.bdf.csv") == "csv"
     assert io._detect_format(tmp_path / "file.bdf.parquet") == "parquet"
+    assert io._detect_format(tmp_path / "file.bdf.pq") == "parquet"
     assert io._detect_format(tmp_path / "file.bdf.json") == "json"
+    assert io._detect_format(tmp_path / "file.bdf.ndjson") == "ndjson"
+    assert io._detect_format(tmp_path / "file.bdf.feather") == "ipc"
+    assert io._detect_format(tmp_path / "file.bdf.arrow") == "ipc"
+    assert io._detect_format(tmp_path / "file.bdf.ipc") == "ipc"
 
 
 def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
@@ -30,7 +35,15 @@ def test_save_and_load_roundtrip_csv_parquet_json(tmp_path: Path):
         }
     )
 
-    for fname in ("sample.bdf.csv", "sample.bdf.parquet", "sample.bdf.json"):
+    for fname in (
+        "sample.bdf.csv",
+        "sample.bdf.parquet",
+        "sample.bdf.json",
+        "sample.bdf.ndjson",
+        "sample.bdf.feather",
+        "sample.bdf.arrow",
+        "sample.bdf.ipc",
+    ):
         path = tmp_path / fname
         io.save(df, path)
         loaded, _metadata = io.read(path)
@@ -71,6 +84,56 @@ def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
     assert "Test Time / s" in raw_human.columns
     assert "Voltage / V" in raw_human.columns
     assert "Current / A" in raw_human.columns
+
+
+def test_save_without_normalize(tmp_path: Path):
+    df_v = pl.DataFrame({"Voltage / V": [3.7, 3.6, 3.5]})
+    path = tmp_path / "sample.bdf.csv"
+
+    # Normalize+validate will fail
+    with pytest.raises(BDFValidationError):
+        io.save(df_v, path)
+
+    # Validate only will fail (missing cols)
+    with pytest.raises(BDFValidationError):
+        io.save(df_v, path, normalize=False)
+
+    # Without validation, it will save
+    io.save(df_v, path, validate=False, normalize=False)
+    io.save(df_v, path, validate=False)
+
+    # Reading with validation fails
+    with pytest.raises(BDFValidationError):
+        io.read(path)
+
+    # Reading without validation works
+    loaded, _metadata = io.read(path, validate=False)
+    assert_frame_equal(df_v, loaded)
+
+    # Non-standard column
+    df_mv = pl.DataFrame({"Voltage / mV": [3.7, 3.6, 3.5]})
+
+    # Normalize+validate will fail (missing cols)
+    with pytest.raises(BDFValidationError):
+        io.save(df_mv, path)
+
+    # Validate only will fail (missing cols)
+    with pytest.raises(BDFValidationError):
+        io.save(df_mv, path, normalize=False)
+
+    # No validate or nomalize saves as-is
+    io.save(df_mv, path, validate=False, normalize=False)
+    loaded, _metadata = io.read(path, validate=False, normalize=False)
+    assert "Voltage / mV" in loaded.columns
+    loaded = loaded.cast({"Voltage / mV": pl.Float64})
+    assert_frame_equal(df_mv, loaded)
+
+    # No validate will still normalize name/units
+    io.save(df_mv, path, validate=False)
+    loaded, _metadata = io.read(path, validate=False, normalize=False)
+    assert "voltage_volt" in loaded.columns
+    loaded = loaded.with_columns((pl.col("voltage_volt").cast(pl.Float64) * 1000).alias("Voltage / mV"))
+    assert_series_equal(df_mv["Voltage / mV"], loaded["Voltage / mV"])
 
 
 @pytest.mark.parametrize("fname", ["roundtrip.bdf.csv", "roundtrip.bdf.parquet"])

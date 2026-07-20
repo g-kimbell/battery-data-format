@@ -9,6 +9,7 @@ import pandas as pd
 import polars as pl
 
 from bdf.plugins import PLUGINS, Plugin, detect
+from bdf.spec import COLUMN_ONTOLOGY
 from bdf.table_normalizers import BDF_NORMALIZER
 
 
@@ -264,6 +265,8 @@ def save(
     *,
     human: bool = False,
     metadata: dict | None = None,
+    normalize: bool = True,
+    validate: bool = True,
     **opts,
 ) -> None:
     """Save a BDF table to a CSV/parquet/IPC/JSON/ndjson/xlsx artifact.
@@ -291,12 +294,12 @@ def save(
         df = df.collect()
     elif isinstance(df, pd.DataFrame):
         df = pl.from_pandas(df)
-
-    df = BDF_NORMALIZER.normalize(df)
+    if normalize:
+        df = BDF_NORMALIZER.normalize(df, validate=validate)
+    if not normalize and validate:
+        COLUMN_ONTOLOGY.validate_df(df)
 
     if human is False:  # Rename cols to machine-readable labels
-        from bdf.spec import COLUMN_ONTOLOGY
-
         df = COLUMN_ONTOLOGY.rename_label_to_mr(df)
 
     assert isinstance(df, pl.DataFrame)
