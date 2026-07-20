@@ -8,13 +8,26 @@ tests run over the real files under ``tests/data/`` and skip when absent.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pytest
 
+import bdf
 from bdf.table_normalizers import ResolvedColumn, Syn, TableNormalizer
-from bdf.table_parsers import DelimTxtParser, ExcelParser, MatParser, NDAParser, ParquetParser, TableParser
+from bdf.table_parsers import (
+    DelimTxtParser,
+    ExcelParser,
+    IpcParser,
+    JsonParser,
+    MatParser,
+    NDAParser,
+    NdjsonParser,
+    ParquetParser,
+    TableParser,
+)
 
 
 class TestMatchesExt:
@@ -653,6 +666,186 @@ class TestParquetParser:
         assert "Voltage / V" in df.columns
         assert "Current / A" in df.columns
         assert pytest.approx(df["Current / A"][0]) == 0.5
+
+    def test_read_raw_without_extension(self, tmp_path: Path) -> None:
+        """ParquetParser._read_raw works without extension (using magic bytes)."""
+        p = tmp_path / "data"
+        pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_parquet(p)
+        lf, _metadata = bdf.read(p, normalize=False)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+
+
+class TestJsonParser:
+    def test_read_raw(self, tmp_path: Path) -> None:
+        """JsonParser._read_raw returns LazyFrame with correct column names."""
+        p = tmp_path / "data.json"
+        pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_json(p)
+        parser = JsonParser()
+        lf = parser._read_raw(p)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+
+    def test_read_column_headings(self, tmp_path: Path) -> None:
+        """JsonParser.read_column_headings returns column names without data rows."""
+        p = tmp_path / "data.json"
+        pl.DataFrame({"x": [1], "y": [2]}).write_json(p)
+        parser = JsonParser()
+        assert parser.read_column_headings(p) == ["x", "y"]
+
+    def test_read_normalized(self, tmp_path: Path) -> None:
+        """JsonParser applies normalizer to produce BDF columns with correct scaling."""
+        p = tmp_path / "data.json"
+        pl.DataFrame({"voltage_V": [3.7], "current_mA": [500.0]}).write_json(p)
+        norm = TableNormalizer(
+            voltage_volt=(Syn(hdr="voltage_{unit}"),),
+            current_ampere=(Syn(hdr="current_{unit}"),),
+        )
+        parser = JsonParser(normalizer=norm)
+        df = parser.read(p, validate=False).collect()
+        assert "Voltage / V" in df.columns
+        assert "Current / A" in df.columns
+        assert pytest.approx(df["Current / A"][0]) == 0.5
+
+    def test_read_raw_column_oriented(self, tmp_path: Path) -> None:
+        """JsonParser._read_raw works for both record-oriented and list-oriented json."""
+        parser = JsonParser()
+
+        p_record = tmp_path / "data_record.json"
+        data_record = [
+            {"a": 1.0, "b": 3.0},
+            {"a": 2.0, "b": 4.0},
+        ]
+        with p_record.open("w") as f:
+            json.dump(data_record, f)
+        lf = parser._read_raw(p_record)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+        df = lf.collect()
+        assert len(df) == 2
+
+        p_list = tmp_path / "data_list.json"
+        data_list = {
+            "a": [1.0, 2.0],
+            "b": [3.0, 4.0],
+        }
+        with p_list.open("w") as f:
+            json.dump(data_list, f)
+        lf = parser._read_raw(p_list)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+        df = lf.collect()
+        assert len(df) == 2
+
+    def test_special_characters(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Spy on Path.open to check encodings used
+        original_open = Path.open
+        calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+        def spy_open(self: Path, *args: Any, **kwargs: Any) -> object:
+            calls.append((args, kwargs))
+            return original_open(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", spy_open)
+
+        # Open file with special characters and assert they do not become garbled
+        parser = JsonParser()
+        p_record = tmp_path / "data_record.json"
+        data_record = [
+            {"q [µA·h]": 1.0, "R [Ω]": 2.0, "sweep [mV s⁻¹]": 3.0, "T1 [°C]": 4.0, "T2 [℃]": 5.0},
+            {"q [µA·h]": 1.1, "R [Ω]": 2.1, "sweep [mV s⁻¹]": 3.1, "T1 [°C]": 4.1, "T2 [℃]": 5.1},
+        ]
+        with p_record.open("w", encoding="utf-8") as f:
+            json.dump(data_record, f, ensure_ascii=False)
+        lf = parser._read_raw(p_record)
+        assert isinstance(lf, pl.LazyFrame)
+        df = lf.collect()
+        assert len(df) == 2
+        assert all(col in df.columns for col in ["q [µA·h]", "R [Ω]", "sweep [mV s⁻¹]", "T1 [°C]", "T2 [℃]"])
+        columns = lf = parser.read_column_headings(p_record)
+        assert columns == ["q [µA·h]", "R [Ω]", "sweep [mV s⁻¹]", "T1 [°C]", "T2 [℃]"]
+
+        # Assert that all Path.open was explicitly given utf-8 encoding
+        # Otherwise Linux CI runners pass this test whether or not encoding was given
+        assert calls, "Path.open was never called"
+        for args, kwargs in calls:
+            mode = args[0] if args else kwargs.get("mode", "r")
+            if "b" in mode:
+                continue
+            encoding = args[1] if len(args) > 1 else kwargs.get("encoding")
+            assert encoding == "utf-8", f"opened in text mode without encoding='utf-8': args={args} kwargs={kwargs}"
+
+
+class TestNdjsonParser:
+    def test_read_raw(self, tmp_path: Path) -> None:
+        """NdjsonParser._read_raw returns LazyFrame with correct column names."""
+        p = tmp_path / "data.ndjson"
+        pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_ndjson(p)
+        parser = NdjsonParser()
+        lf = parser._read_raw(p)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+
+    def test_read_column_headings(self, tmp_path: Path) -> None:
+        """NdjsonParser.read_column_headings returns column names without data rows."""
+        p = tmp_path / "data.ndjson"
+        pl.DataFrame({"x": [1], "y": [2]}).write_ndjson(p)
+        parser = NdjsonParser()
+        assert parser.read_column_headings(p) == ["x", "y"]
+
+    def test_read_normalized(self, tmp_path: Path) -> None:
+        """NdjsonParser applies normalizer to produce BDF columns with correct scaling."""
+        p = tmp_path / "data.ndjson"
+        pl.DataFrame({"voltage_V": [3.7], "current_mA": [500.0]}).write_ndjson(p)
+        norm = TableNormalizer(
+            voltage_volt=(Syn(hdr="voltage_{unit}"),),
+            current_ampere=(Syn(hdr="current_{unit}"),),
+        )
+        parser = NdjsonParser(normalizer=norm)
+        df = parser.read(p, validate=False).collect()
+        assert "Voltage / V" in df.columns
+        assert "Current / A" in df.columns
+        assert pytest.approx(df["Current / A"][0]) == 0.5
+
+
+class TestIpcParser:
+    def test_read_raw(self, tmp_path: Path) -> None:
+        """IpcParser._read_raw returns LazyFrame with correct column names."""
+        p = tmp_path / "data.ipc"
+        pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_ipc(p)
+        parser = IpcParser()
+        lf = parser._read_raw(p)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
+
+    def test_read_column_headings(self, tmp_path: Path) -> None:
+        """IpcParser.read_column_headings returns column names without data rows."""
+        p = tmp_path / "data.ipc"
+        pl.DataFrame({"x": [1], "y": [2]}).write_ipc(p)
+        parser = IpcParser()
+        assert parser.read_column_headings(p) == ["x", "y"]
+
+    def test_read_normalized(self, tmp_path: Path) -> None:
+        """IpcParser applies normalizer to produce BDF columns with correct scaling."""
+        p = tmp_path / "data.ipc"
+        pl.DataFrame({"voltage_V": [3.7], "current_mA": [500.0]}).write_ipc(p)
+        norm = TableNormalizer(
+            voltage_volt=(Syn(hdr="voltage_{unit}"),),
+            current_ampere=(Syn(hdr="current_{unit}"),),
+        )
+        parser = IpcParser(normalizer=norm)
+        df = parser.read(p, validate=False).collect()
+        assert "Voltage / V" in df.columns
+        assert "Current / A" in df.columns
+        assert pytest.approx(df["Current / A"][0]) == 0.5
+
+    def test_read_raw_without_extension(self, tmp_path: Path) -> None:
+        """IpcParser._read_raw works without extension (using magic bytes)."""
+        p = tmp_path / "data"
+        pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]}).write_ipc(p)
+        lf, _metadata = bdf.read(p, normalize=False)
+        assert isinstance(lf, pl.LazyFrame)
+        assert lf.collect_schema().names() == ["a", "b"]
 
 
 class TestNDAParser:
