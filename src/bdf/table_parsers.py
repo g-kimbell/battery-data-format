@@ -702,7 +702,7 @@ class JsonParser(TableParser):
         """
         import json
 
-        with Path(path).open("r") as f:
+        with Path(path).open("r", encoding="utf-8") as f:
             data = json.load(f)
         return pl.LazyFrame(data)
 
@@ -717,7 +717,7 @@ class JsonParser(TableParser):
         """
         import json
 
-        with Path(path).open("r") as f:
+        with Path(path).open("r", encoding="utf-8") as f:
             data = json.load(f)
         return pl.LazyFrame(data).collect_schema().names()
 
