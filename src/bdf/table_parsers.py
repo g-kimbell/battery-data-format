@@ -977,11 +977,11 @@ class MatParser(TableParser):
 
 
 # ---------------------------------------------------------------------------
-# MPRParser
+# MprParser
 # ---------------------------------------------------------------------------
 
 
-class MPRParser(TableParser):
+class MprParser(TableParser):
     """Wraps fastnda for Biologic .mpr binary files."""
 
     model_config = ConfigDict(frozen=True)
@@ -1006,7 +1006,7 @@ class MPRParser(TableParser):
         try:
             import yadg  # type: ignore
         except ImportError as exc:
-            raise RuntimeError("MPRParser requires yadg. Install with `pip install yadg`.") from exc
+            raise RuntimeError("MprParser requires yadg. Install with `pip install yadg`.") from exc
         resolved = resolve_source(path)
         dt = yadg.extractors.extract("eclab.mpr", str(resolved))
         ds = dt.to_dataset()
