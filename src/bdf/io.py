@@ -206,8 +206,8 @@ def save(
     df: pl.DataFrame | pl.LazyFrame | pd.DataFrame,
     pathlike: str | Path,
     *,
-    human: bool = False,
     metadata: dict | None = None,
+    human: bool = False,
     normalize: bool = True,
     validate: bool = True,
     **opts,
@@ -221,6 +221,12 @@ def save(
         df: BDF table to write.
         pathlike: Output file path; format/compression are inferred from its extension.
         metadata: Optional metadata dict written alongside as a ``.metadata.json`` sidecar.
+        human: Save with human-readable column names, e.g. 'Voltage / V' (default False);
+            False uses machine-readable column names e.g 'voltage_volt'.
+        normalize: Map vendor columns to BDF canonical names (default True); False returns
+            raw source columns unchanged.
+        validate: Check columns against the BDF ontology, raising on missing required ones
+            (default True); False only warns.
         **opts: Additional keyword arguments forwarded to the polars writer
             (``write_csv``/``write_parquet``/``write_ipc``/``write_json``/``write_ndjson``/
             ``write_excel``).
