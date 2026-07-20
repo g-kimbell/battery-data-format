@@ -156,6 +156,48 @@ def test_save_without_normalize(tmp_path: Path):
     assert_series_equal(df_mv["Voltage / mV"], loaded["Voltage / mV"])
 
 
+def test_save_with_extra_cols(tmp_path: Path):
+    """Save should keep additional columns by default."""
+    df = pl.DataFrame(
+        {
+            "Test Time / s": [0.0, 1.0],
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+            "Thing I Just Calculated / %": [30.0, 40.0],
+        }
+    )
+    path = tmp_path / "sample.bdf.parquet"
+    io.save(df, path, normalize=False, human=True)
+
+    # Raw data contains extra column
+    df2 = pl.read_parquet(path)
+    assert_frame_equal(df, df2)
+
+
+def test_save_warns(tmp_path: Path):
+    """Save should forward validation warnings."""
+    df = pl.DataFrame(
+        {
+            "Test Time / ms": [0.0, 1.0],
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+        }
+    )
+    path = tmp_path / "sample.bdf.csv"
+    with pytest.warns(UserWarning, match="Legacy BDF column labels detected"):
+        io.save(df, path, validate=False)
+
+    df = pl.DataFrame(
+        {
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+        }
+    )
+    path = tmp_path / "sample.bdf.csv"
+    with pytest.warns(UserWarning, match="required BDF columns missing from output"):
+        io.save(df, path, validate=False)
+
+
 @pytest.mark.parametrize("fname", ["roundtrip.bdf.csv", "roundtrip.bdf.parquet"])
 def test_save_default_artifact_read_validate_roundtrip(tmp_path: Path, fname: str) -> None:
     """save() default notation output is readable by read() with validation enabled.
