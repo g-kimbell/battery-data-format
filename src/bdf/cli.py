@@ -57,8 +57,8 @@ def ingest(
     validate_converted: bool = typer.Option(
         True, "--validate-converted/--no-validate-converted", help="Validate newly converted files"
     ),
-    include_optional: bool = typer.Option(
-        True, "--include-optional/--exclude-optional", help="Include optional BDF columns"
+    include_unknown: bool = typer.Option(
+        False, "--include-unknown/--exclude-unknown", help="Include columns outside of the BDF spec"
     ),
     plugin: Optional[str] = typer.Option(None, help="Force a specific plugin id for raw files"),
     incremental: bool = typer.Option(True, "--incremental/--no-incremental", help="Skip unchanged files"),
@@ -72,11 +72,16 @@ def ingest(
     cell_metadata_dir: Optional[str] = typer.Option("batteries", help="Base dir for per-cell metadata folders"),
     doi_enrich: bool = typer.Option(True, "--doi-enrich/--no-doi-enrich", help="Enrich missing metadata from DOI"),
     doi_timeout: int = typer.Option(15, help="Per-request timeout (seconds) for DOI lookups"),
-    human: bool = typer.Option(False, "--human/--machine", help="Serialize headers as prefLabel instead of notation"),
+    labels: str = typer.Option("machine", "--labels", help="Column header style: 'machine', 'human', or 'unchanged'"),
+    human: Optional[bool] = typer.Option(None, "--human/--machine", help="Short for --label=human / --label=machine"),
 ):
     """
     Convert raw vendor files to BDF and emit metadata sidecars.
     """
+    if human is not None:
+        labels = "human" if human else "machine"
+    if labels not in ("human", "machine", "unchanged"):
+        raise typer.BadParameter("--labels must be one of: machine, human, unchanged")
     summary = ingest_bdf(
         source,
         out_dir=out_dir,
@@ -86,7 +91,7 @@ def ingest(
         recursive=recursive,
         validate_existing=validate_existing,
         validate_converted=validate_converted,
-        include_optional=include_optional,
+        include_unknown=include_unknown,
         plugin=plugin,
         incremental=incremental,
         force=force,
@@ -99,7 +104,7 @@ def ingest(
         cell_metadata_dir=cell_metadata_dir,
         doi_enrich=doi_enrich,
         doi_timeout=doi_timeout,
-        human=human,
+        labels=labels,
     )
     print(summary)
 
@@ -271,12 +276,24 @@ def templates(
 def convert(
     path: str,
     to: str = "bdf.csv",
-    as_: Optional[str] = None,
-    human: bool = typer.Option(False, "--human/--machine", help="Serialize headers as prefLabel instead of notation"),
+    as_: Optional[str] = typer.Option(None, "--as", help="Force a specific plugin id for raw input"),
+    include_unknown: bool = typer.Option(
+        False, "--include-unknown", help="Keep columns outside the BDF spec in the output"
+    ),
+    validate: bool = typer.Option(True, "--validate/--no-validate", help="Validate against the BDF schema"),
+    labels: str = typer.Option("machine", "--labels", help="Column header style: 'machine', 'human', or 'unchanged'"),
+    human: Optional[bool] = typer.Option(None, "--human/--machine", help="Short for --label=human / --label=machine"),
 ):
-    df_pl, _ = read(path, plugin=as_)
-    df = df_pl.to_pandas()
-    save(df, to, human=human)
+    """
+    Convert a raw vendor file or existing BDF artifact to another BDF artifact.
+    """
+    if human is not None:
+        labels = "human" if human else "machine"
+    if labels not in ("human", "machine", "unchanged"):
+        raise typer.BadParameter("--labels must be one of: machine, human, unchanged")
+
+    df, _ = read(path, plugin=as_, validate=validate, include_unknown=include_unknown)
+    save(df, to, validate=validate, labels=labels)
     print(f"[bdf] wrote {to}")
 
 

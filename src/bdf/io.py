@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pandas as pd
 import polars as pl
@@ -11,7 +11,6 @@ import polars as pl
 from bdf.file_utils import open_compressed, strip_compression_suffix
 from bdf.plugins import PLUGINS, Plugin, detect
 from bdf.spec import COLUMN_ONTOLOGY
-from bdf.table_normalizers import BDF_NORMALIZER
 
 
 def _read(
@@ -20,8 +19,7 @@ def _read(
     plugin: Plugin | str | None = None,
     normalize: bool = True,
     validate: bool = True,
-    include_optional: bool = True,
-    extra_columns: dict[str, str] | None = None,
+    include_unknown: bool = False,
     lazy: bool = True,
     tz: str = "UTC",
 ) -> tuple[pl.DataFrame | pl.LazyFrame, dict]:
@@ -48,8 +46,7 @@ def _read(
         path,
         normalize=normalize,
         validate=validate,
-        include_optional=include_optional,
-        extra_columns=extra_columns,
+        include_unknown=include_unknown,
         lazy=lazy,
         tz=tz,
     )
@@ -68,8 +65,7 @@ def read(
     plugin: Plugin | str | None = None,
     normalize: bool = True,
     validate: bool = True,
-    include_optional: bool = True,
-    extra_columns: dict[str, str] | None = None,
+    include_unknown: bool = False,
     tz: str = "UTC",
 ) -> tuple[pl.DataFrame, dict]:
     """Read ``path`` (local file or URL) to BDF-canonical form, returning ``(df, metadata)``.
@@ -83,8 +79,7 @@ def read(
             raw source columns unchanged.
         validate: Check columns against the BDF ontology, error if missing required columns
             (default True); set to False to only warn.
-        include_optional: Include optional BDF columns in the normalized output (default True).
-        extra_columns: Additional column rename mappings to apply during normalization.
+        include_unknown: Keep columns outside of the BDF spec in the dataframe (default False).
         tz: IANA timezone used to compute ``Unix Time / s`` if the source has naive datetime.
             Default is``"UTC"``, and will warn if source contains naive datetimes.
 
@@ -101,8 +96,7 @@ def read(
         plugin=plugin,
         normalize=normalize,
         validate=validate,
-        include_optional=include_optional,
-        extra_columns=extra_columns,
+        include_unknown=include_unknown,
         lazy=False,
         tz=tz,
     )
@@ -115,8 +109,7 @@ def scan(
     plugin: Plugin | str | None = None,
     normalize: bool = True,
     validate: bool = True,
-    include_optional: bool = True,
-    extra_columns: dict[str, str] | None = None,
+    include_unknown: bool = False,
     tz: str = "UTC",
 ) -> tuple[pl.LazyFrame, dict]:
     """Scan ``path`` (local file or URL) to BDF-canonical form, returning ``(df, metadata)``.
@@ -135,8 +128,7 @@ def scan(
             raw source columns unchanged.
         validate: Check columns against the BDF ontology, raising on missing required ones
             (default True); False only warns.
-        include_optional: Include optional BDF columns in the normalized output.
-        extra_columns: Additional column rename mappings to apply during normalization.
+        include_unknown: Keep columns outside of the BDF spec in the dataframe (default False).
         tz: IANA timezone used to compute ``Unix Time / s`` if the source has naive datetime.
             Default is``"UTC"``, and will warn if source contains naive datetimes.
 
@@ -153,8 +145,7 @@ def scan(
         plugin=plugin,
         normalize=normalize,
         validate=validate,
-        include_optional=include_optional,
-        extra_columns=extra_columns,
+        include_unknown=include_unknown,
         lazy=True,
         tz=tz,
     )
@@ -207,26 +198,25 @@ def save(
     pathlike: str | Path,
     *,
     metadata: dict | None = None,
-    human: bool = False,
-    normalize: bool = True,
     validate: bool = True,
+    labels: Literal["human", "machine", "unchanged"] = "machine",
     **opts,
 ) -> None:
     """Save a BDF table to a CSV/parquet/IPC/JSON/ndjson/xlsx artifact.
 
     Detects format and compression from the file extension and creates parent
-    directories as needed. Columns are normalized to BDF-canonical form before saving.
+    directories as needed.
 
     Args:
         df: BDF table to write.
         pathlike: Output file path; format/compression are inferred from its extension.
         metadata: Optional metadata dict written alongside as a ``.metadata.json`` sidecar.
-        human: Save with human-readable column names, e.g. 'Voltage / V' (default False);
-            False uses machine-readable column names e.g 'voltage_volt'.
-        normalize: Map vendor columns to BDF canonical names (default True); False returns
-            raw source columns unchanged.
         validate: Check columns against the BDF ontology, raising on missing required ones
             (default True); False only warns.
+        labels: Style of column names to use (default: "machine"):
+            "human": BDF preferred label, e.g. "Voltage / V"
+            "machine": BDF machine-readable label e.g. "voltage_volt"
+            "unchanged": Keep column names as-is
         **opts: Additional keyword arguments forwarded to the polars writer
             (``write_csv``/``write_parquet``/``write_ipc``/``write_json``/``write_ndjson``/
             ``write_excel``).
@@ -242,13 +232,10 @@ def save(
         df = df.collect()
     elif isinstance(df, pd.DataFrame):
         df = pl.from_pandas(df)
-    if normalize:
-        df = BDF_NORMALIZER.normalize(df, validate=validate)
-    if not normalize and validate:
-        COLUMN_ONTOLOGY.validate_df(df)
 
-    if human is False:  # Rename cols to machine-readable labels
-        df = COLUMN_ONTOLOGY.rename_label_to_mr(df)
+    COLUMN_ONTOLOGY.validate_df(df, raise_on_error=validate)
+
+    df = COLUMN_ONTOLOGY.rename_labels(df, labels)
 
     assert isinstance(df, pl.DataFrame)
 

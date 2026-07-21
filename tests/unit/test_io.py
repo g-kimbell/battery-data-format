@@ -104,27 +104,22 @@ def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
     assert "Current / A" in loaded.columns
 
     human_path = tmp_path / "human.bdf.csv"
-    io.save(df, human_path, human=True)
+    io.save(df, human_path, labels="human")
     raw_human = pl.read_csv(human_path)
     assert "Test Time / s" in raw_human.columns
     assert "Voltage / V" in raw_human.columns
     assert "Current / A" in raw_human.columns
 
 
-def test_save_without_normalize(tmp_path: Path):
+def test_save_validation(tmp_path: Path):
     df_v = pl.DataFrame({"Voltage / V": [3.7, 3.6, 3.5]})
     path = tmp_path / "sample.bdf.csv"
 
-    # Normalize+validate will fail
+    # With validate will fail
     with pytest.raises(BDFValidationError):
         io.save(df_v, path)
 
-    # Validate only will fail (missing cols)
-    with pytest.raises(BDFValidationError):
-        io.save(df_v, path, normalize=False)
-
     # Without validation, it will save
-    io.save(df_v, path, validate=False, normalize=False)
     io.save(df_v, path, validate=False)
 
     # Reading with validation fails
@@ -138,26 +133,22 @@ def test_save_without_normalize(tmp_path: Path):
     # Non-standard column
     df_mv = pl.DataFrame({"Voltage / mV": [3.7, 3.6, 3.5]})
 
-    # Normalize+validate will fail (missing cols)
+    # Validate will fail (missing cols)
     with pytest.raises(BDFValidationError):
         io.save(df_mv, path)
 
-    # Validate only will fail (missing cols)
-    with pytest.raises(BDFValidationError):
-        io.save(df_mv, path, normalize=False)
-
-    # No validate or nomalize saves as-is
-    io.save(df_mv, path, validate=False, normalize=False)
+    # No validate saves as-is
+    io.save(df_mv, path, validate=False)
     loaded, _metadata = io.read(path, validate=False, normalize=False)
     assert "Voltage / mV" in loaded.columns
     loaded = loaded.cast({"Voltage / mV": pl.Float64})
     assert_frame_equal(df_mv, loaded)
 
-    # No validate will still normalize name/units
+    # No validate will still normalize name/units reading back by default
     io.save(df_mv, path, validate=False)
-    loaded, _metadata = io.read(path, validate=False, normalize=False)
-    assert "voltage_volt" in loaded.columns
-    loaded = loaded.with_columns((pl.col("voltage_volt").cast(pl.Float64) * 1000).alias("Voltage / mV"))
+    loaded, _metadata = io.read(path, validate=False)
+    assert "Voltage / V" in loaded.columns
+    loaded = loaded.with_columns((pl.col("Voltage / V") * 1000).alias("Voltage / mV"))
     assert_series_equal(df_mv["Voltage / mV"], loaded["Voltage / mV"])
 
 
@@ -172,7 +163,7 @@ def test_save_with_extra_cols(tmp_path: Path):
         }
     )
     path = tmp_path / "sample.bdf.parquet"
-    io.save(df, path, normalize=False, human=True)
+    io.save(df, path, labels="human")
 
     # Raw data contains extra column
     df2 = pl.read_parquet(path)
@@ -304,41 +295,37 @@ def test_read_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespa
     read(
         p,
         plugin=read_mocks.plugin,
-        normalize=False,
         validate=False,
-        include_optional=False,
-        extra_columns={"a": "b"},
+        normalize=False,
+        include_unknown=True,
         tz="America/New_York",
     )
     read_mocks.table_read.assert_called_once_with(
         p,
-        normalize=False,
         validate=False,
-        include_optional=False,
-        extra_columns={"a": "b"},
+        normalize=False,
+        include_unknown=True,
         lazy=False,
         tz="America/New_York",
     )
 
 
 def test_scan_forwards_all_read_kwargs_to_table_parser(read_mocks: SimpleNamespace, tmp_path: Path) -> None:
-    """scan() forwards path + the five read-shaping kwargs verbatim, plus lazy=True."""
+    """scan() forwards path + the four read-shaping kwargs verbatim, plus lazy=True."""
     p = tmp_path / "f.csv"
     scan(
         p,
         plugin=read_mocks.plugin,
         normalize=False,
         validate=False,
-        include_optional=False,
-        extra_columns={"a": "b"},
+        include_unknown=False,
         tz="America/New_York",
     )
     read_mocks.table_read.assert_called_once_with(
         p,
         normalize=False,
         validate=False,
-        include_optional=False,
-        extra_columns={"a": "b"},
+        include_unknown=False,
         lazy=True,
         tz="America/New_York",
     )

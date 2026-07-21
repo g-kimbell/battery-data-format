@@ -8,7 +8,7 @@ import re
 import tempfile
 import warnings
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pint
 import polars as pl
@@ -603,15 +603,20 @@ class ColumnOntology:
         return tuple(q.formatted_label for _, q in self if not q.required and not q.deprecated)
 
     @coerce_dataframe
-    def validate_df(self, df: pl.LazyFrame) -> pl.LazyFrame:
+    def validate_df(self, df: pl.LazyFrame, *, raise_on_error: bool = True) -> pl.LazyFrame:
         """Check ``df`` column names against BDF canonical labels.
 
         Accepts pandas DataFrame, polars DataFrame, or polars LazyFrame.
-        Raises ``BDFValidationError`` if required columns are absent.
-        Warns (``UserWarning``) if extra non-BDF columns are present.
+        Warns (``UserWarning``) if extra non-BDF columns, or deprecated/legacy BDF labels,
+        are present. Missing required columns raise ``BDFValidationError`` by default; pass
+        ``raise_on_error=False`` to warn instead. A deprecated label already present for a
+        required quantity (e.g. ``"Test Time / ms"`` for ``"Test Time / s"``) counts as
+        satisfying that requirement.
 
         Args:
             df: DataFrame to validate (pandas or polars).
+            raise_on_error: Raise ``BDFValidationError`` on missing required columns (default
+                True); False emits a ``UserWarning`` instead.
 
         Returns:
             Validated DataFrame coerced back to the original input type.
@@ -630,10 +635,34 @@ class ColumnOntology:
                 required.add(lbl)
 
         missing = required - cols
-        if missing:
-            from bdf.validate import BDFValidationError  # lazy — validate imports spec
 
-            raise BDFValidationError(f"Missing required BDF columns: {sorted(missing)}")
+        legacy_pairs: list[tuple[str, str]] = []
+        for _, q in self:
+            if not q.deprecated or not q.replaced_by:
+                continue
+            hit = next((lbl for lbl in (q.formatted_label, q.effective_notation) if lbl in cols), None)
+            if hit is None:
+                continue
+            replacement = self[q.replaced_by].formatted_label if q.replaced_by in self else None
+            if replacement is None:
+                continue
+            legacy_pairs.append((hit, replacement))
+            missing.discard(replacement)
+
+        if legacy_pairs:
+            detail = ", ".join(f"{old!r} -> {new!r}" for old, new in legacy_pairs)
+            warnings.warn(
+                f"Legacy BDF column labels detected: {detail}. Update to preferred labels.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        if missing:
+            if raise_on_error:
+                from bdf.validate import BDFValidationError  # lazy — validate imports spec
+
+                raise BDFValidationError(f"Missing required BDF columns: {sorted(missing)}")
+            warnings.warn(f"required BDF columns missing from output: {sorted(missing)}", UserWarning, stacklevel=2)
 
         extra = cols - canonical
         if extra:
@@ -710,25 +739,38 @@ class ColumnOntology:
         return first_deprecated
 
     @coerce_dataframe
-    def rename_label_to_mr(self, df: pl.LazyFrame) -> pl.LazyFrame:
-        """Rename BDF columns from preferred-label to machine-readable.
+    def rename_labels(self, df: pl.LazyFrame, mode: Literal["human", "machine", "unchanged"]) -> pl.LazyFrame:
+        """Rename BDF columns between preferred-label and machine-readable notation.
 
-        E.g. ``"Voltage / V"`` -> ``"voltage_volt"``.
-        Columns that don't exactly match are left as-is and warn.
+        E.g. ``"Voltage / V"`` <-> ``"voltage_volt"``.
+        Columns outside the BDF spec are left as-is and warn.
 
         Args:
-            df: DataFrame (pandas|polars|lazy) with BDF preferred-label columns.
+            df: DataFrame (pandas|polars|lazy) with BDF columns.
+            mode: Target column style.
+                "human": Rename to BDF preferred label, e.g. "Voltage / V".
+                "machine": Rename to BDF machine-readable notation, e.g. "voltage_volt".
+                "unchanged": Leave columns as-is.
 
         Returns:
-            DataFrame of the same type, with matched columns renamed to notation.
+            DataFrame of the same type, with matched columns renamed.
         """
-        label_to_notation = {q.formatted_label: q.effective_notation for _, q in self if not q.deprecated}
+        if mode == "unchanged":
+            return df
+        if mode == "human":
+            source_kind = "machine-readable notations"
+            mapping_source = {q.effective_notation: q.formatted_label for _, q in self if not q.deprecated}
+            already_target = {q.formatted_label for _, q in self if not q.deprecated}
+        else:
+            source_kind = "preferred labels"
+            mapping_source = {q.formatted_label: q.effective_notation for _, q in self if not q.deprecated}
+            already_target = {q.effective_notation for _, q in self if not q.deprecated}
         cols = df.collect_schema().names()
-        mapping = {c: label_to_notation[c] for c in cols if c in label_to_notation}
-        unmatched = [c for c in cols if c not in label_to_notation]
+        mapping = {c: mapping_source[c] for c in cols if c in mapping_source}
+        unmatched = [c for c in cols if c not in mapping_source and c not in already_target]
         if unmatched:
             warnings.warn(
-                f"Columns not recognized as BDF preferred labels, left as-is: {unmatched}", UserWarning, stacklevel=2
+                f"Columns not recognized as BDF {source_kind}, left as-is: {unmatched}", UserWarning, stacklevel=2
             )
         return df.rename(mapping) if mapping else df
 
