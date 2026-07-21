@@ -224,6 +224,7 @@ BDF_PARQUET = Plugin(table_parser=ParquetParser(normalizer=BDF_NORMALIZER))
 BDF_JSON = Plugin(table_parser=JsonParser(normalizer=BDF_NORMALIZER))
 BDF_NDJSON = Plugin(table_parser=NdjsonParser(normalizer=BDF_NORMALIZER))
 BDF_IPC = Plugin(table_parser=IpcParser(normalizer=BDF_NORMALIZER))
+BDF_XLSX = Plugin(table_parser=ExcelParser(normalizer=BDF_NORMALIZER))
 
 PLUGINS: dict[str, Plugin] = PluginDict(
     {
@@ -244,6 +245,7 @@ PLUGINS: dict[str, Plugin] = PluginDict(
         "bdf_json": BDF_JSON,
         "bdf_ndjson": BDF_NDJSON,
         "bdf_ipc": BDF_IPC,
+        "bdf_xlsx": BDF_XLSX,
     }
 )
 

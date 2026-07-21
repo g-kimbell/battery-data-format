@@ -24,6 +24,7 @@ def test_detect_format_known_and_unknown(tmp_path: Path):
     assert io._detect_format(tmp_path / "file.bdf.feather") == "ipc"
     assert io._detect_format(tmp_path / "file.bdf.arrow") == "ipc"
     assert io._detect_format(tmp_path / "file.bdf.ipc") == "ipc"
+    assert io._detect_format(tmp_path / "file.bdf.xlsx") == "xlsx"
 
     assert io._detect_format(tmp_path / "file.bdf.csv.gz") == "csv"
     assert io._detect_format(tmp_path / "file.bdf.csv.bz2") == "csv"
@@ -40,15 +41,19 @@ def test_save_and_load_roundtrips(tmp_path: Path):
         }
     )
 
-    exts = [".csv", ".parquet", ".json", ".ndjson", ".feather", ".arrow", ".ipc"]
+    exts = [".csv", ".parquet", ".json", ".ndjson", ".feather", ".arrow", ".ipc", ".xlsx"]
     comps = ["", ".gz", ".bz2", ".xz", ".zst"]
 
     for ext in exts:
         for comp in comps:
             path = tmp_path / ("data.bdf" + ext + comp)
-            io.save(df, path)
-            loaded, _metadata = io.read(path)
-            assert_frame_equal(df, loaded)
+            if ext == ".xlsx" and comp:
+                with pytest.raises(ValueError, match="Compression is not supported for xlsx"):
+                    io.save(df, path)
+            else:
+                io.save(df, path)
+                loaded, _metadata = io.read(path)
+                assert_frame_equal(df, loaded)
 
 
 def test_compression_compresses(tmp_path: Path):
