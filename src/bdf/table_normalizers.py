@@ -605,7 +605,8 @@ class TableNormalizer(BaseModel):
             exprs.append(resolved_column.get_expr(mr_name, tz))
 
         if include_unknown:
-            unknown = [h for h in headers if h not in resolved]
+            claimed_headers = {rc.source_header for rc in resolved.values()}
+            unknown = [h for h in headers if h not in claimed_headers]
             exprs.extend([pl.col(h) for h in unknown])
 
         if not exprs:

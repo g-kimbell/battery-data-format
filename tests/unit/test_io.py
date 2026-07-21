@@ -347,3 +347,186 @@ def test_read_returns_table_parser_frame_unchanged(read_mocks: SimpleNamespace, 
     p = tmp_path / "f.csv"
     result, _ = read(p, plugin=read_mocks.plugin)
     assert result is sentinel
+
+
+def test_read_bdf_files(tmp_path: Path) -> None:
+    """Read bdf from various files."""
+    df1 = pl.DataFrame(
+        {
+            "Test Time / s": [1.0, 2.0, 3.0],
+            "Voltage / V": [4.0, 4.1, 4.2],
+            "Current / A": [0.1, 0.1, 0.1],
+        }
+    )
+
+    for extra_ext in ("", ".bdf", ".a.b.c", ".a.b.c.bdf"):
+        p = tmp_path / f"data{extra_ext}.csv"
+        df1.write_csv(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.parquet"
+        df1.write_parquet(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.json"
+        df1.write_json(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.ndjson"
+        df1.write_ndjson(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.ipc"
+        df1.write_ipc(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.arrow"
+        df1.write_ipc(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+        p = tmp_path / f"data{extra_ext}.feather"
+        df1.write_ipc(p)
+        df2, _metadata = io.read(p)
+        assert_frame_equal(df1, df2)
+
+
+def test_read_with_unknown(tmp_path: Path) -> None:
+    """Test reading with unknown columns."""
+    df1 = pl.DataFrame(
+        {
+            "Test Time / s": [1.0, 2.0, 3.0],
+            "Voltage / V": [4.0, 4.1, 4.2],
+            "Current / A": [0.1, 0.1, 0.1],
+            "foo": [1, 2, 3],
+            "bar": ["b", "a", "r"],
+        }
+    )
+    p = tmp_path / "data.parquet"
+    df1.write_parquet(p)
+
+    df2, _metadata = io.read(p)
+    assert "foo" not in df2.columns
+    assert "bar" not in df2.columns
+
+    df2, _metadata = io.read(p, include_unknown=True)
+    assert "foo" in df2.columns
+    assert "bar" in df2.columns
+    assert_frame_equal(df1, df2)
+
+
+def test_roundtrip_with_unknown(tmp_path: Path) -> None:
+    """Test reading with unknown columns."""
+    df1 = pl.DataFrame(
+        {
+            "Test Time / s": [1.0, 2.0, 3.0],
+            "Voltage / V": [4.0, 4.1, 4.2],
+            "Current / A": [0.1, 0.1, 0.1],
+            "foo": [1, 2, 3],
+            "bar": ["b", "a", "r"],
+        }
+    )
+    p1 = tmp_path / "data.parquet"
+    df1.write_parquet(p1)
+
+    df2, _metadata = io.read(p1, include_unknown=True)
+    assert "foo" in df2.columns
+    assert "bar" in df2.columns
+
+    # Save always includes unknown
+    p2 = tmp_path / "data.parquet"
+    io.save(df2, p2)
+    df3, _metadata = io.read(p2, include_unknown=True)
+    assert "foo" in df3.columns
+    assert "bar" in df3.columns
+    assert_frame_equal(df1, df3)
+
+    # Saving/reading unknown works with other files/compression
+    p3 = tmp_path / "data.ndjson.gz"
+    io.save(df3, p3)
+    df4, _metadata = io.read(p3, include_unknown=True)
+    assert "foo" in df4.columns
+    assert "bar" in df4.columns
+    assert_frame_equal(df1, df4)
+
+
+def test_save_labels(tmp_path: Path) -> None:
+    """Test saving with different labels."""
+    df_orig = pl.DataFrame(
+        {
+            "Test Time / s": [1.0, 2.0, 3.0],
+            "Voltage / V": [4.0, 4.1, 4.2],
+            "Current / A": [0.1, 0.1, 0.1],
+        }
+    )
+    p = tmp_path / "data.parquet"
+
+    # Save uses machine-readable by default
+    io.save(df_orig, p)
+    df = pl.read_parquet(p)
+    assert "test_time_second" in df.columns
+    assert "voltage_volt" in df.columns
+    assert "current_ampere" in df.columns
+
+    # Explicit machine-readable works
+    io.save(df_orig, p, labels="machine")
+    df = pl.read_parquet(p)
+    assert "test_time_second" in df.columns
+    assert "voltage_volt" in df.columns
+    assert "current_ampere" in df.columns
+
+    # Explicit human-readable works
+    io.save(df_orig, p, labels="human")
+    df = pl.read_parquet(p)
+    assert "Test Time / s" in df.columns
+    assert "Voltage / V" in df.columns
+    assert "Current / A" in df.columns
+
+    # Unchanged stays unchanged
+    io.save(df_orig, p, labels="unchanged")
+    df = pl.read_parquet(p)
+    assert "Test Time / s" in df.columns
+    assert "Voltage / V" in df.columns
+    assert "Current / A" in df.columns
+
+    # Test starting from machine-readable
+    df_orig = pl.DataFrame(
+        {
+            "test_time_second": [1.0, 2.0, 3.0],
+            "voltage_volt": [4.0, 4.1, 4.2],
+            "current_ampere": [0.1, 0.1, 0.1],
+        }
+    )
+
+    # Save uses machine-readable by default
+    io.save(df_orig, p, validate=False)
+    df = pl.read_parquet(p)
+    assert "test_time_second" in df.columns
+    assert "voltage_volt" in df.columns
+    assert "current_ampere" in df.columns
+
+    # Explicit machine-readable works
+    io.save(df_orig, p, labels="machine", validate=False)
+    df = pl.read_parquet(p)
+    assert "test_time_second" in df.columns
+    assert "voltage_volt" in df.columns
+    assert "current_ampere" in df.columns
+
+    # Explicit human-readable works
+    io.save(df_orig, p, labels="human", validate=False)
+    df = pl.read_parquet(p)
+    assert "Test Time / s" in df.columns
+    assert "Voltage / V" in df.columns
+    assert "Current / A" in df.columns
+
+    # Unchanged stays unchanged
+    io.save(df_orig, p, labels="unchanged", validate=False)
+    df = pl.read_parquet(p)
+    assert "test_time_second" in df.columns
+    assert "voltage_volt" in df.columns
+    assert "current_ampere" in df.columns
