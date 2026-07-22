@@ -20,13 +20,12 @@ if TYPE_CHECKING:
     import pandas as pd  # noqa: F401
 
 from bdf._df_compat import coerce_dataframe  # noqa: E402
-from bdf.spec import COLUMN_ONTOLOGY, get_unit_conversion
+from bdf.spec import _UNIT_CAPTURE, COLUMN_ONTOLOGY, get_unit_conversion
 
 _logger = logging.getLogger(__name__)
 
 _DATE_COMPONENT_RE = re.compile(r"%[YymbBdej]")
 _TZ_COMPONENT_RE = re.compile(r"%:?[zZ]")
-_UNIT_CAPTURE = r"([A-Za-z0-9.·/*^%°℃ΩΩµμ⁰¹²³⁴⁵⁶⁷⁸⁹⁻ \-]+)"  # omega/ohm and mu/micro are different characters
 _DST_AMBIGUOUS_STRATEGY = "earliest"
 _DST_NON_EXISTENT_STRATEGY = "null"
 

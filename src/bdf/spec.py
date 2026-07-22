@@ -157,6 +157,9 @@ def parse_label(label: str) -> tuple[str, str] | None:
     return base, unit
 
 
+_UNIT_CAPTURE = r"([A-Za-z0-9.·/*^%°℃ΩΩµμ⁰¹²³⁴⁵⁶⁷⁸⁹⁻ \-]+)"  # omega/ohm and mu/micro are different characters
+
+
 def get_unit_conversion(src_unit: str | None, dst_unit: str | None) -> tuple[float, float] | None:
     """Return (scale, offset) for src→dst unit conversion, None if incompatible.
 
@@ -607,11 +610,13 @@ class ColumnOntology:
         """Check ``df`` column names against BDF canonical labels.
 
         Accepts pandas DataFrame, polars DataFrame, or polars LazyFrame.
-        Warns (``UserWarning``) if extra non-BDF columns, or deprecated/legacy BDF labels,
-        are present. Missing required columns raise ``BDFValidationError`` by default; pass
-        ``raise_on_error=False`` to warn instead. A deprecated label already present for a
-        required quantity (e.g. ``"Test Time / ms"`` for ``"Test Time / s"``) counts as
-        satisfying that requirement.
+        Warns (``UserWarning``) if extra non-BDF columns, deprecated/legacy BDF labels, or
+        non-canonical-unit BDF labels are present. Missing required columns raise
+        ``BDFValidationError`` by default; pass ``raise_on_error=False`` to warn instead. A
+        column counts as satisfying a required quantity if it matches that quantity's
+        preferred label, machine-readable name, a deprecated/legacy label that replaces it
+        (e.g. ``"Test Time / ms"`` for ``"Test Time / s"``), or its label with a
+        unit-compatible-but-non-canonical unit (e.g. ``"Voltage / mV"`` for ``"Voltage / V"``).
 
         Args:
             df: DataFrame to validate (pandas or polars).
@@ -625,18 +630,23 @@ class ColumnOntology:
         cols = set(lf.collect_schema().names())
 
         canonical: set[str] = set()
-        required: set[str] = set()
-        for _, q in self:
+        required_by_label: dict[str, str] = {}  # formatted_label -> mr_name
+        for mr_name, q in self:
             if q.deprecated:
                 continue
-            lbl = q.formatted_label
-            canonical.add(lbl)
+            canonical.add(q.formatted_label)
+            canonical.add(q.effective_notation)
             if q.required:
-                required.add(lbl)
+                required_by_label[q.formatted_label] = mr_name
 
-        missing = required - cols
+        missing = {
+            lbl
+            for lbl, mr_name in required_by_label.items()
+            if lbl not in cols and self[mr_name].effective_notation not in cols
+        }
 
         legacy_pairs: list[tuple[str, str]] = []
+        handled: set[str] = set()
         for _, q in self:
             if not q.deprecated or not q.replaced_by:
                 continue
@@ -648,6 +658,7 @@ class ColumnOntology:
                 continue
             legacy_pairs.append((hit, replacement))
             missing.discard(replacement)
+            handled.add(hit)
 
         if legacy_pairs:
             detail = ", ".join(f"{old!r} -> {new!r}" for old, new in legacy_pairs)
@@ -657,15 +668,40 @@ class ColumnOntology:
                 stacklevel=2,
             )
 
+        non_canonical_units: list[tuple[str, str]] = []
+        for _, q in self:
+            if q.deprecated or q.unit is None or "{unit}" not in q.label_template:
+                continue
+            parts = q.label_template.split("{unit}")
+            pattern = _UNIT_CAPTURE.join(re.escape(p) for p in parts)
+            for c in cols - canonical - handled:
+                m = re.fullmatch(pattern, c)
+                if m is None or get_unit_conversion(m.group(1), q.unit) is None:
+                    continue
+                non_canonical_units.append((c, q.formatted_label))
+                handled.add(c)
+                missing.discard(q.formatted_label)
+
+        if non_canonical_units:
+            detail = ", ".join(f"{c!r} (canonical: {canon!r})" for c, canon in non_canonical_units)
+            warnings.warn(
+                f"Columns not using the canonical BDF unit: {detail}",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        extra = cols - canonical - handled
+
         if missing:
+            detail = f"Missing required BDF columns: {sorted(missing)}"
+            if extra:
+                detail += f"; unrecognized columns present: {sorted(extra)}"
             if raise_on_error:
                 from bdf.validate import BDFValidationError  # lazy — validate imports spec
 
-                raise BDFValidationError(f"Missing required BDF columns: {sorted(missing)}")
-            warnings.warn(f"required BDF columns missing from output: {sorted(missing)}", UserWarning, stacklevel=2)
-
-        extra = cols - canonical
-        if extra:
+                raise BDFValidationError(detail)
+            warnings.warn(detail, UserWarning, stacklevel=2)
+        elif extra:
             warnings.warn(f"Non-BDF columns present: {sorted(extra)}", UserWarning, stacklevel=2)
 
         return lf
@@ -758,11 +794,9 @@ class ColumnOntology:
         if mode == "unchanged":
             return df
         if mode == "preferred":
-            source_kind = "machine-readable notations"
             mapping_source = {q.effective_notation: q.formatted_label for _, q in self if not q.deprecated}
             already_target = {q.formatted_label for _, q in self if not q.deprecated}
         elif mode == "machine":
-            source_kind = "preferred labels"
             mapping_source = {q.formatted_label: q.effective_notation for _, q in self if not q.deprecated}
             already_target = {q.effective_notation for _, q in self if not q.deprecated}
         else:
@@ -773,7 +807,9 @@ class ColumnOntology:
         unmatched = [c for c in cols if c not in mapping_source and c not in already_target]
         if unmatched:
             warnings.warn(
-                f"Columns not recognized as BDF {source_kind}, left as-is: {unmatched}", UserWarning, stacklevel=2
+                f"The following columns could not be converted to '{mode}' and were left as-is: {unmatched}",
+                UserWarning,
+                stacklevel=2,
             )
         return df.rename(mapping) if mapping else df
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -134,15 +135,15 @@ def test_save_with_extra_cols(tmp_path: Path):
         }
     )
     path = tmp_path / "sample.bdf.parquet"
-    io.save(df, path, labels="preferred")
+    with pytest.warns(UserWarning, match="Non-BDF columns present"):
+        io.save(df, path)
 
     # Raw data contains extra column
     df2 = pl.read_parquet(path)
     assert_frame_equal(df, df2)
 
 
-def test_save_warns(tmp_path: Path):
-    """Save should forward validation warnings."""
+def test_save_legacy_warns(tmp_path: Path):
     df = pl.DataFrame(
         {
             "Test Time / ms": [0.0, 1.0],
@@ -156,6 +157,8 @@ def test_save_warns(tmp_path: Path):
     with pytest.warns(UserWarning, match="Legacy BDF column labels detected"):
         io.save(df, path, validate=False)
 
+
+def test_save_missing_col_warns(tmp_path: Path):
     df = pl.DataFrame(
         {
             "Voltage / V": [3.7, 3.6],
@@ -165,9 +168,11 @@ def test_save_warns(tmp_path: Path):
     path = tmp_path / "sample.bdf.csv"
     with pytest.raises(BDFValidationError):
         io.save(df, path)
-    with pytest.warns(UserWarning, match="required BDF columns missing from output"):
+    with pytest.warns(UserWarning, match="Missing required BDF columns: \['Test Time / s'\]"):
         io.save(df, path, validate=False)
 
+
+def test_save_extra_col_warns(tmp_path: Path):
     df = pl.DataFrame(
         {
             "Test Time / s": [0.0, 1.0],
@@ -176,10 +181,71 @@ def test_save_warns(tmp_path: Path):
             "foo": [1, 2],
         }
     )
+    path = tmp_path / "sample.bdf.csv"
     with pytest.warns(UserWarning, match="Non-BDF columns present"):
         io.save(df, path)
     with pytest.warns(UserWarning, match="Non-BDF columns present"):
         io.save(df, path, validate=False)
+
+
+def test_save_non_canonical_units_warns(tmp_path: Path):
+    df = pl.DataFrame(
+        {
+            "Test Time / s": [0.0, 1.0],
+            "Voltage / mV": [3.7, 3.6],
+            "Current / uA": [0.1, 0.1],
+        }
+    )
+    path = tmp_path / "sample.bdf.csv"
+    with pytest.warns(UserWarning, match="Columns not using the canonical BDF unit"):
+        io.save(df, path)
+
+
+def test_save_bad_columns_errors(tmp_path: Path):
+    # Bad columns error contains both missing and unrecognized columns
+    df = pl.DataFrame(
+        {
+            "test_time_s": [0.0, 1.0],
+            "voltage_millivolt": [3.7, 3.6],
+            "current_microampere": [0.1, 0.1],
+        }
+    )
+    path = tmp_path / "sample.bdf.csv"
+    with pytest.raises(
+        BDFValidationError, match=r"(?=.*Missing required BDF columns)(?=.*unrecognized columns present)"
+    ):
+        io.save(df, path)
+
+
+def test_save_good_columns_dont_warn(tmp_path: Path):
+    df = pl.DataFrame(
+        {
+            "Test Time / s": [0.0, 1.0],
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+        }
+    )
+    path = tmp_path / "sample.bdf.csv"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        io.save(df, path)
+        io.save(df, path, validate=False)
+        io.save(df, path, labels="machine")
+        io.save(df, path, labels="preferred")
+
+    df = pl.DataFrame(
+        {
+            "test_time_second": [0.0, 1.0],
+            "voltage_volt": [3.7, 3.6],
+            "current_ampere": [0.1, 0.1],
+        }
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        io.save(df, path)
+        io.save(df, path, validate=False)
+        io.save(df, path, labels="machine")
+        io.save(df, path, labels="preferred")
 
 
 @pytest.mark.parametrize("fname", ["roundtrip.bdf.csv", "roundtrip.bdf.parquet"])
