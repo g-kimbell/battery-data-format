@@ -82,35 +82,6 @@ def test_detect_format_unknown_raises(tmp_path: Path):
         io._detect_format(bad)
 
 
-def test_save_defaults_to_notation_and_human_opt_in(tmp_path: Path):
-    df = pl.DataFrame(
-        {
-            "Test Time / s": [0, 1],
-            "Voltage / V": [3.7, 3.6],
-            "Current / A": [0.1, 0.1],
-        }
-    )
-
-    machine_path = tmp_path / "machine.bdf.csv"
-    io.save(df, machine_path)
-    raw_machine = pl.read_csv(machine_path)
-    assert "test_time_second" in raw_machine.columns
-    assert "voltage_volt" in raw_machine.columns
-    assert "current_ampere" in raw_machine.columns
-
-    loaded, _metadata = io.read(machine_path)
-    assert "Test Time / s" in loaded.columns
-    assert "Voltage / V" in loaded.columns
-    assert "Current / A" in loaded.columns
-
-    human_path = tmp_path / "human.bdf.csv"
-    io.save(df, human_path, labels="human")
-    raw_human = pl.read_csv(human_path)
-    assert "Test Time / s" in raw_human.columns
-    assert "Voltage / V" in raw_human.columns
-    assert "Current / A" in raw_human.columns
-
-
 def test_save_validation(tmp_path: Path):
     df_v = pl.DataFrame({"Voltage / V": [3.7, 3.6, 3.5]})
     path = tmp_path / "sample.bdf.csv"
@@ -163,7 +134,7 @@ def test_save_with_extra_cols(tmp_path: Path):
         }
     )
     path = tmp_path / "sample.bdf.parquet"
-    io.save(df, path, labels="human")
+    io.save(df, path, labels="preferred")
 
     # Raw data contains extra column
     df2 = pl.read_parquet(path)
@@ -181,6 +152,8 @@ def test_save_warns(tmp_path: Path):
     )
     path = tmp_path / "sample.bdf.csv"
     with pytest.warns(UserWarning, match="Legacy BDF column labels detected"):
+        io.save(df, path)
+    with pytest.warns(UserWarning, match="Legacy BDF column labels detected"):
         io.save(df, path, validate=False)
 
     df = pl.DataFrame(
@@ -190,7 +163,22 @@ def test_save_warns(tmp_path: Path):
         }
     )
     path = tmp_path / "sample.bdf.csv"
+    with pytest.raises(BDFValidationError):
+        io.save(df, path)
     with pytest.warns(UserWarning, match="required BDF columns missing from output"):
+        io.save(df, path, validate=False)
+
+    df = pl.DataFrame(
+        {
+            "Test Time / s": [0.0, 1.0],
+            "Voltage / V": [3.7, 3.6],
+            "Current / A": [0.1, 0.1],
+            "foo": [1, 2],
+        }
+    )
+    with pytest.warns(UserWarning, match="Non-BDF columns present"):
+        io.save(df, path)
+    with pytest.warns(UserWarning, match="Non-BDF columns present"):
         io.save(df, path, validate=False)
 
 
@@ -466,33 +454,35 @@ def test_save_labels(tmp_path: Path) -> None:
     )
     p = tmp_path / "data.parquet"
 
-    # Save uses machine-readable by default
+    def assert_preferred() -> None:
+        assert "Test Time / s" in df.columns
+        assert "Voltage / V" in df.columns
+        assert "Current / A" in df.columns
+
+    def assert_machine() -> None:
+        assert "test_time_second" in df.columns
+        assert "voltage_volt" in df.columns
+        assert "current_ampere" in df.columns
+
+    # Unchanged by default
     io.save(df_orig, p)
     df = pl.read_parquet(p)
-    assert "test_time_second" in df.columns
-    assert "voltage_volt" in df.columns
-    assert "current_ampere" in df.columns
+    assert_preferred()
 
-    # Explicit machine-readable works
-    io.save(df_orig, p, labels="machine")
-    df = pl.read_parquet(p)
-    assert "test_time_second" in df.columns
-    assert "voltage_volt" in df.columns
-    assert "current_ampere" in df.columns
-
-    # Explicit human-readable works
-    io.save(df_orig, p, labels="human")
-    df = pl.read_parquet(p)
-    assert "Test Time / s" in df.columns
-    assert "Voltage / V" in df.columns
-    assert "Current / A" in df.columns
-
-    # Unchanged stays unchanged
+    # Explicit unchanged
     io.save(df_orig, p, labels="unchanged")
     df = pl.read_parquet(p)
-    assert "Test Time / s" in df.columns
-    assert "Voltage / V" in df.columns
-    assert "Current / A" in df.columns
+    assert_preferred()
+
+    # Explicit machine-readable
+    io.save(df_orig, p, labels="machine")
+    df = pl.read_parquet(p)
+    assert_machine()
+
+    # Explicit human-readable
+    io.save(df_orig, p, labels="preferred")
+    df = pl.read_parquet(p)
+    assert_preferred()
 
     # Test starting from machine-readable
     df_orig = pl.DataFrame(
@@ -503,30 +493,26 @@ def test_save_labels(tmp_path: Path) -> None:
         }
     )
 
-    # Save uses machine-readable by default
+    # Unchanged by default
     io.save(df_orig, p, validate=False)
     df = pl.read_parquet(p)
-    assert "test_time_second" in df.columns
-    assert "voltage_volt" in df.columns
-    assert "current_ampere" in df.columns
+    assert_machine()
 
-    # Explicit machine-readable works
-    io.save(df_orig, p, labels="machine", validate=False)
-    df = pl.read_parquet(p)
-    assert "test_time_second" in df.columns
-    assert "voltage_volt" in df.columns
-    assert "current_ampere" in df.columns
-
-    # Explicit human-readable works
-    io.save(df_orig, p, labels="human", validate=False)
-    df = pl.read_parquet(p)
-    assert "Test Time / s" in df.columns
-    assert "Voltage / V" in df.columns
-    assert "Current / A" in df.columns
-
-    # Unchanged stays unchanged
+    # Explicit unchanged
     io.save(df_orig, p, labels="unchanged", validate=False)
     df = pl.read_parquet(p)
-    assert "test_time_second" in df.columns
-    assert "voltage_volt" in df.columns
-    assert "current_ampere" in df.columns
+    assert_machine()
+
+    # Explicit machine-readable
+    io.save(df_orig, p, labels="machine", validate=False)
+    df = pl.read_parquet(p)
+    assert_machine()
+
+    # Explicit preferred
+    io.save(df_orig, p, labels="preferred", validate=False)
+    df = pl.read_parquet(p)
+    assert_preferred()
+
+    # Unknown mode raises
+    with pytest.raises(ValueError, match="Mode 'foo' not understood"):
+        io.save(df_orig, p, labels="foo", validate=False)  # type: ignore[arg-type]

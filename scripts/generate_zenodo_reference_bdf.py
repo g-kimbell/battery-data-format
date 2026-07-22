@@ -432,7 +432,7 @@ def main() -> int:
 
             df, _ = bdf.read(local_file, plugin=plugin, validate=False)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            bdf.save(df, out_path, human=args.human)
+            bdf.save(df, out_path, labels="preferred" if args.human else "machine")
             results.append(
                 CaseResult(
                     source=str(case.get("source")),

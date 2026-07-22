@@ -72,16 +72,20 @@ def ingest(
     cell_metadata_dir: Optional[str] = typer.Option("batteries", help="Base dir for per-cell metadata folders"),
     doi_enrich: bool = typer.Option(True, "--doi-enrich/--no-doi-enrich", help="Enrich missing metadata from DOI"),
     doi_timeout: int = typer.Option(15, help="Per-request timeout (seconds) for DOI lookups"),
-    labels: str = typer.Option("machine", "--labels", help="Column header style: 'machine', 'human', or 'unchanged'"),
-    human: Optional[bool] = typer.Option(None, "--human/--machine", help="Short for --label=human / --label=machine"),
+    labels: str = typer.Option(
+        "machine", "--labels", help="Column header style: 'preferred', 'machine', or 'unchanged'"
+    ),
+    human: Optional[bool] = typer.Option(
+        None, "--human/--machine", help="Short for --label=preferred / --label=machine"
+    ),
 ):
     """
     Convert raw vendor files to BDF and emit metadata sidecars.
     """
     if human is not None:
-        labels = "human" if human else "machine"
-    if labels not in ("human", "machine", "unchanged"):
-        raise typer.BadParameter("--labels must be one of: machine, human, unchanged")
+        labels = "preferred" if human else "machine"
+    if labels not in ("preferred", "machine", "unchanged"):
+        raise typer.BadParameter("--labels must be one of: preferred, machine, unchanged")
     summary = ingest_bdf(
         source,
         out_dir=out_dir,
@@ -281,16 +285,20 @@ def convert(
         False, "--include-unknown", help="Keep columns outside the BDF spec in the output"
     ),
     validate: bool = typer.Option(True, "--validate/--no-validate", help="Validate against the BDF schema"),
-    labels: str = typer.Option("machine", "--labels", help="Column header style: 'machine', 'human', or 'unchanged'"),
-    human: Optional[bool] = typer.Option(None, "--human/--machine", help="Short for --label=human / --label=machine"),
+    labels: str = typer.Option(
+        "machine", "--labels", help="Column header style: 'preferred', 'machine', or 'unchanged'"
+    ),
+    human: Optional[bool] = typer.Option(
+        None, "--human/--machine", help="Short for --label=preferred / --label=machine"
+    ),
 ):
     """
     Convert a raw vendor file or existing BDF artifact to another BDF artifact.
     """
     if human is not None:
-        labels = "human" if human else "machine"
-    if labels not in ("human", "machine", "unchanged"):
-        raise typer.BadParameter("--labels must be one of: machine, human, unchanged")
+        labels = "preferred" if human else "machine"
+    if labels not in ("preferred", "machine", "unchanged"):
+        raise typer.BadParameter("--labels must be one of: preferred, machine, unchanged")
 
     df, _ = read(path, plugin=as_, validate=validate, include_unknown=include_unknown)
     save(df, to, validate=validate, labels=labels)

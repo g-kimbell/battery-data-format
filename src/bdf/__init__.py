@@ -543,7 +543,7 @@ def ingest(
     cell_metadata_dir: str | Path | None = "batteries",
     doi_enrich: bool = True,
     doi_timeout: int = 15,
-    labels: Literal["human", "machine", "unchanged"] = "machine",
+    labels: Literal["preferred", "machine", "unchanged"] = "machine",
 ):
     """
     Convert raw vendor files to BDF and validate existing BDF artifacts.
@@ -569,7 +569,7 @@ def ingest(
     - doi_enrich: if True, enrich missing dataset metadata from DOI (DataCite, then Crossref)
     - doi_timeout: per-request timeout (seconds) for DOI lookups
     - labels: Style of column names to use (default: "machine"):
-        "human": BDF preferred label, e.g. "Voltage / V"
+        "preferred": BDF preferred label, e.g. "Voltage / V"
         "machine": BDF machine-readable label e.g. "voltage_volt"
         "unchanged": Keep column names as-is
 

@@ -199,7 +199,7 @@ def save(
     *,
     metadata: dict | None = None,
     validate: bool = True,
-    labels: Literal["human", "machine", "unchanged"] = "machine",
+    labels: Literal["preferred", "machine", "unchanged"] = "unchanged",
     **opts,
 ) -> None:
     """Save a BDF table to a CSV/parquet/IPC/JSON/ndjson/xlsx artifact.
@@ -213,8 +213,8 @@ def save(
         metadata: Optional metadata dict written alongside as a ``.metadata.json`` sidecar.
         validate: Check columns against the BDF ontology, raising on missing required ones
             (default True); False only warns.
-        labels: Style of column names to use (default: "machine"):
-            "human": BDF preferred label, e.g. "Voltage / V"
+        labels: Style of column names to use (default: "unchanged"):
+            "preferred": BDF preferred label, e.g. "Voltage / V"
             "machine": BDF machine-readable label e.g. "voltage_volt"
             "unchanged": Keep column names as-is
         **opts: Additional keyword arguments forwarded to the polars writer

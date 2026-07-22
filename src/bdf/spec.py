@@ -739,7 +739,7 @@ class ColumnOntology:
         return first_deprecated
 
     @coerce_dataframe
-    def rename_labels(self, df: pl.LazyFrame, mode: Literal["human", "machine", "unchanged"]) -> pl.LazyFrame:
+    def rename_labels(self, df: pl.LazyFrame, mode: Literal["preferred", "machine", "unchanged"]) -> pl.LazyFrame:
         """Rename BDF columns between preferred-label and machine-readable notation.
 
         E.g. ``"Voltage / V"`` <-> ``"voltage_volt"``.
@@ -748,7 +748,7 @@ class ColumnOntology:
         Args:
             df: DataFrame (pandas|polars|lazy) with BDF columns.
             mode: Target column style.
-                "human": Rename to BDF preferred label, e.g. "Voltage / V".
+                "preferred": Rename to BDF preferred label, e.g. "Voltage / V".
                 "machine": Rename to BDF machine-readable notation, e.g. "voltage_volt".
                 "unchanged": Leave columns as-is.
 
@@ -757,14 +757,17 @@ class ColumnOntology:
         """
         if mode == "unchanged":
             return df
-        if mode == "human":
+        if mode == "preferred":
             source_kind = "machine-readable notations"
             mapping_source = {q.effective_notation: q.formatted_label for _, q in self if not q.deprecated}
             already_target = {q.formatted_label for _, q in self if not q.deprecated}
-        else:
+        elif mode == "machine":
             source_kind = "preferred labels"
             mapping_source = {q.formatted_label: q.effective_notation for _, q in self if not q.deprecated}
             already_target = {q.effective_notation for _, q in self if not q.deprecated}
+        else:
+            msg = f"Mode '{mode}' not understood. Use 'preferred', 'machine', or 'unchanged'."
+            raise ValueError(msg)
         cols = df.collect_schema().names()
         mapping = {c: mapping_source[c] for c in cols if c in mapping_source}
         unmatched = [c for c in cols if c not in mapping_source and c not in already_target]
