@@ -494,25 +494,25 @@ def test_save_labels(tmp_path: Path) -> None:
     )
 
     # Unchanged by default
-    io.save(df_orig, p, validate=False)
+    io.save(df_orig, p)
     df = pl.read_parquet(p)
     assert_machine()
 
     # Explicit unchanged
-    io.save(df_orig, p, labels="unchanged", validate=False)
+    io.save(df_orig, p, labels="unchanged")
     df = pl.read_parquet(p)
     assert_machine()
 
     # Explicit machine-readable
-    io.save(df_orig, p, labels="machine", validate=False)
+    io.save(df_orig, p, labels="machine")
     df = pl.read_parquet(p)
     assert_machine()
 
     # Explicit preferred
-    io.save(df_orig, p, labels="preferred", validate=False)
+    io.save(df_orig, p, labels="preferred")
     df = pl.read_parquet(p)
     assert_preferred()
 
     # Unknown mode raises
     with pytest.raises(ValueError, match="Mode 'foo' not understood"):
-        io.save(df_orig, p, labels="foo", validate=False)  # type: ignore[arg-type]
+        io.save(df_orig, p, labels="foo")  # type: ignore[arg-type]

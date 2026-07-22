@@ -11,6 +11,7 @@ import polars as pl
 from bdf.file_utils import open_compressed, strip_compression_suffix
 from bdf.plugins import PLUGINS, Plugin, detect
 from bdf.spec import COLUMN_ONTOLOGY
+from bdf.table_normalizers import BDF_NORMALIZER
 
 
 def _read(
@@ -233,7 +234,8 @@ def save(
     elif isinstance(df, pd.DataFrame):
         df = pl.from_pandas(df)
 
-    COLUMN_ONTOLOGY.validate_df(df, raise_on_error=validate)
+    # Do not mutate df, this is just to confirm the dataset can be normalized and raise/warn on inconsistencies
+    BDF_NORMALIZER.normalize(df, validate=validate, include_unknown=True)
 
     df = COLUMN_ONTOLOGY.rename_labels(df, labels)
 

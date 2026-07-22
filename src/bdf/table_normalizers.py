@@ -609,26 +609,11 @@ class TableNormalizer(BaseModel):
             unknown = [h for h in headers if h not in claimed_headers]
             exprs.extend([pl.col(h) for h in unknown])
 
-        if not exprs:
-            if validate:
-                COLUMN_ONTOLOGY.validate_df(df)
-            return df
+        if exprs:
+            df = df.select(exprs)
 
-        out = df.select(exprs)
-
-        if validate:
-            COLUMN_ONTOLOGY.validate_df(out)
-            return out
-
-        out_cols = set(out.collect_schema().names())
-        missing = [s.formatted_label for mr, s in COLUMN_ONTOLOGY if s.required and s.formatted_label not in out_cols]
-        if missing:
-            warnings.warn(
-                f"normalize: required BDF columns missing from output: {missing}",
-                UserWarning,
-                stacklevel=3,
-            )
-        return out
+        COLUMN_ONTOLOGY.validate_df(df, raise_on_error=validate)
+        return df
 
 
 # ---------------------------------------------------------------------------
