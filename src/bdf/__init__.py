@@ -355,64 +355,26 @@ def validate(
         p = Path(local_path)
         fname = p.name
 
-        # Only attempt to load files that look like BDF artifacts
-        def _looks_like_bdf_artifact(path: Path) -> bool:
-            # quick filename hint: *.bdf.csv, *.bdf.parquet, *.bdf.feather, *.bdf.json(.gz)
-            name_lc = path.name.lower()
-            if any(
-                name_lc.endswith(suf)
-                for suf in (
-                    ".bdf.csv",
-                    ".bdf.csv.gz",
-                    ".bdf.parquet",
-                    ".bdf.feather",
-                    ".bdf.json",
-                    ".bdf.json.gz",
-                )
-            ):
-                return True
-            # header sniff for CSV only (cheap and safe)
-            if name_lc.endswith(".csv") or name_lc.endswith(".csv.gz"):
-                try:
-                    with (
-                        gzip.open(path, "rt")
-                        if name_lc.endswith(".gz")
-                        else open(path, encoding="utf-8", errors="ignore")
-                    ) as f:
-                        head = "".join([f.readline() for _ in range(2)]).lower()
-                    header_line = head.splitlines()[0] if head else ""
-                    cols_l = {c.strip().lower() for c in header_line.split(",")}
-                    from . import spec
-
-                    for _, quantity_spec in spec.COLUMN_ONTOLOGY:
-                        if not quantity_spec.required or quantity_spec.deprecated:
-                            continue
-                        pref = quantity_spec.formatted_label.lower()
-                        notation = quantity_spec.effective_notation.lower()
-                        if pref not in cols_l and notation not in cols_l:
-                            return False
-                    return True
-                except Exception:
-                    return False
-            return False
-
-        # Optional gzip import for header sniff
-        import gzip as _maybe_gzip  # safe alias
-
-        gzip = _maybe_gzip
-
-        if not _looks_like_bdf_artifact(p):
+        # Check if file looks like bdf
+        try:
+            plugin_name, _plugin = detect(p)
+        except ValueError:
+            plugin_name = "None"
+            message = "Did not match any existing plugin"
+        else:
+            message = f"Matched plugin '{plugin_name}'"
+        if not plugin_name.startswith("bdf_"):
             return _bad_report(
                 kind="not_bdf_artifact",
-                detail=f"{fname} does not look like a BDF artifact (expected .bdf.<ext> or a BDF-style header).",
+                detail=f"{fname} does not look like a BDF artifact. {message}.",
                 file=fname,
             )
 
-        # Try to load with strict BDF IO (no transformations)
+        # Try to read the file
         try:
             from .io import read
 
-            df, _metadata = read(p)  # TODO not strict, takes any data
+            df, _metadata = read(p)
             df = df.to_pandas()
         except Exception as e:
             return _bad_report(
