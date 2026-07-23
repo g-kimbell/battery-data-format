@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - Dropped Python 3.9 support; now requires Python ≥3.10 (tested through 3.14).
 - `read()` gives a `(polars.DataFrame, metadata)` tuple, replacing the old pandas `read(...) -> pandas.DataFrame`.
 - New `scan()` gives a `(polars.LazyFrame, metadata)` tuple.
+- `load()` removed, use `read()` or `scan()` for all files (BDF or non-BDF).
 - `read`/`scan` signature changed:
   - `source` → `path`
   - `registry_path` removed.
@@ -20,8 +21,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - `parse()` is removed — use `read(path, normalize=False, validate=False)`.
 - `save()` rewritten on Polars with more files supported, a `validate` kwarg, and a `labels` option (`"preferred" | "machine" | "unchanged"`) replacing the old `human=True/False` toggle. The `.metadata.json` sidecar behavior is unchanged.
 - `save()` to JSON previously output NDJSON, which cannot be read by standard JSON parsers. These are now two distinct options, save to ".ndjson" to get newline-delimited JSON.
-- Column spec is now ontology-driven (`bdf.spec.ColumnOntology`, synced from the published BDF ontology release); `bdf.normalize`, `bdf.units`, `bdf.detect`, and `bdf.data_sources` are removed in favor of `bdf.plugins`, `bdf.table_parsers`, `bdf.metadata_parsers`, and `bdf.table_normalizers`.
+- Top-level `plugins()` function removed; use `bdf.plugins.list_sources()` instead.
+- `ingest()` gets the same kwarg changes as `read`/`scan`/`save`: `include_optional` removed, `include_unknown` added, and `human: bool = False` → `labels: Literal["preferred", "machine", "unchanged"] = "machine"`.
+- `ingest` CLI: `--include-optional` removed, `--include-unknown` added, `--labels` option added.
 - CLI: `clean` and `plot` no longer take `--assume-bdf`.
+- Column spec is now ontology-driven (`bdf.spec.ColumnOntology`, synced from the published BDF ontology release); `bdf.normalize`, `bdf.units`, `bdf.detect`, and `bdf.data_sources` are removed in favor of `bdf.plugins`, `bdf.table_parsers`, `bdf.metadata_parsers`, and `bdf.table_normalizers`.
 - `fastnda` install extra renamed to `nda`.
 - `Quantity.unit_conversion` renamed to `convert_to`.
 
